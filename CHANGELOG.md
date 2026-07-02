@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-02
+- **Open-sourced a self-hostable build under AGPL-3.0.** The app, CLI, `@md/core`, MCP stub,
+  and Supabase migrations are published as a self-hostable mirror; see the README's
+  **Self-hosting** section for setup (Supabase project + any Node/Vercel host, configured
+  entirely by environment variables). Licensed AGPL-3.0 (`LICENSE`).
+
 ## 2026-06-16
 - **Agent read link now works pasted into ChatGPT/any LLM.** The agent link is a GET
   capability URL `…/d/<slug>/agent/<token>` (token in the path): a plain fetch now returns a
@@ -60,7 +66,7 @@
 - Full Playwright coverage: `upload.spec.ts`, `upload-a11y.spec.ts` (axe per state, both themes +
   keyboard/SR/focus), `upload-security.spec.ts` (gate non-bypassable, no-secret, rate-limit, RLS),
   a gate-aware `seedDocument()` helper + rate-limit reset in `globalSetup` (existing specs migrated to
-  unlock the gate). Suite green on desktop + mobile. Run artifacts in `team-outputs/2026-06-15-document-upload/`.
+  unlock the gate). Suite green on desktop + mobile.
 
 ## 2026-06-14
 - Responsive comment badge: on mobile it caps at 2 avatars (rest collapse into a "+N" pill) and
@@ -85,8 +91,7 @@
   (`personal_access_tokens.document_id`, migration `0003`) so a token authorizes only its own doc
   (was: any PAT = owner of every document). Also: global security headers (CSP/HSTS/X-Frame-Options/
   nosniff/Referrer-Policy/Permissions-Policy) and OWASP-aligned argon2id params + an 8-char password
-  floor. New `e2e/security-pat.spec.ts`. Report in `team-outputs/2026-06-14-security-review/`.
-  ACTION REQUIRED: apply migration 0003 to cloud + rotate the previously-exposed secrets.
+  floor. New `e2e/security-pat.spec.ts`.
 - Preview↔Code view transition: a tasteful, geometry-neutral blur+opacity cross-fade between the
   rendered preview and the raw markdown, plus a one-shot character "decode" morph on the Code view's
   "Markdown source" header (MorphReveal). Animates only opacity/filter — never a transform — so
