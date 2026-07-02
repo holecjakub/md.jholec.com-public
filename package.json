@@ -1,0 +1,22 @@
+{
+  "name": "md-jholec",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @md/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "e2e": "pnpm --filter @md/web e2e"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint-plugin-jsx-a11y": "^6.10.0",
+    "prettier": "^3.3.0",
+    "supabase": "^2.106.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.10.0",
+    "vercel": "^54.13.0"
+  }
+}

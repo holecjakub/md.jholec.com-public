@@ -1,0 +1,416 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Dark mode is driven by the `.dark` class (next-themes attribute="class"). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* jholec.com brand tokens. */
+  --accent: #0099ff;
+  --accent-foreground: #ffffff;
+  /* AA-accessible accent for TEXT on light backgrounds (#0099ff fails 4.5:1 on white). */
+  --accent-strong: #0061a8;
+  /* Filled accent button background: white text on #0099ff is only 2.99:1, so the
+     solid action color is the deeper #0061a8 (5.86:1 with white) — AA in both themes. */
+  --accent-solid: #0061a8;
+  /* Code block surface + highlight.js token palette (AA on --code-bg). */
+  --code-bg: #f6f8fa;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-comment: #57606a;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --muted: #757575;
+  --border: #ebebeb;
+
+  /* jholec.com default border radius. */
+  --radius: 16px;
+
+  /* shadcn structural tokens (used by base components). */
+  --muted-foreground: #6b6b6b; /* AA on both white and the --secondary #f5f5f5 surface */
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  /* Elevated floating surfaces (action pill, comment popovers) that must sit
+   * above the page background. On light it is a very light grey so the surface
+   * separates from the #ffffff page; in dark it is a near-black dark grey so it
+   * separates from the #0a0a0a background. */
+  --elevated: #f4f4f5;
+  --primary: #0a0a0a;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #0a0a0a;
+  --destructive: oklch(0.577 0.245 27.325);
+  --input: #ebebeb;
+  --ring: #0099ff;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #0a0a0a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0099ff;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ebebeb;
+  --sidebar-ring: #0099ff;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ebebeb;
+  --muted: #a8a8a8;
+  --border: #1f1f1f;
+  /* On the dark background #0099ff already clears 4.5:1, so brand accent is fine for text. */
+  --accent-strong: #0099ff;
+  /* Filled accent button stays the deeper #0061a8 so white label text keeps 5.86:1. */
+  --accent-solid: #0061a8;
+  --code-bg: #161b22;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-comment: #8b949e;
+
+  --muted-foreground: #a8a8a8;
+  --card: #141414;
+  --card-foreground: #ebebeb;
+  --popover: #141414;
+  --popover-foreground: #ebebeb;
+  /* Slightly darker than the prior #1c1c1e so the pill/comment surfaces read as
+   * a deep grey card lifted just off the near-black page background. */
+  --elevated: #18181a;
+  --primary: #ebebeb;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ebebeb;
+  --destructive: oklch(0.704 0.191 22.216);
+  --input: #1f1f1f;
+  --ring: #0099ff;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: #141414;
+  --sidebar-foreground: #ebebeb;
+  --sidebar-primary: #ebebeb;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: #0099ff;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1f1f1f;
+  --sidebar-ring: #0099ff;
+}
+
+@theme inline {
+  /* Colors — wired to the CSS variables above so light/dark follows `.dark`. */
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-solid: var(--accent-solid);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+
+  /* Fonts — Geist (UI), Inter (prose), Fragment Mono (code). */
+  --font-sans: var(--font-geist);
+  --font-geist: var(--font-geist);
+  --font-inter: var(--font-inter);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-geist);
+
+  /* shadcn structural color + radius scale. */
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-elevated: var(--elevated);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist), Arial, Helvetica, sans-serif;
+}
+
+/*
+ * Inline comment highlights — a thin, low-opacity underline marking anchored
+ * text as a subtle locator. The hue is PER AUTHOR: each highlight span carries an
+ * inline `--hl-color` (the comment author's identity color, same as their
+ * avatar), so a paragraph commented by several people shows differently-tinted
+ * hairlines and you can tell whose is whose. `--hl` falls back to `--accent` for
+ * any span without an inline color (e.g. the Code view reuses this class on a
+ * button that InlineHighlightLayer doesn't build). All tints are alpha-only mixes
+ * of the one hue, so every author gets identical restraint — never a highlighter.
+ */
+.md-comment-highlight {
+  --hl: var(--hl-color, var(--accent));
+  cursor: pointer;
+  border-radius: 2px;
+  /* Pinned color/thickness/offset so the rule reads identically on plain and
+   * bold text (no currentColor, no from-font weight). skip-ink:none keeps it a
+   * clean continuous rule across descenders. */
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  /* Light mode: the identity hues are dark (L ≤ 42%) but a low-alpha mark on a
+   * white page washes out — keep it subtle yet clearly legible with a fairly
+   * opaque hairline (dark mode raises this separately below). */
+  text-decoration-color: color-mix(in srgb, var(--hl) 70%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+  transition:
+    background-color 120ms ease,
+    text-decoration-color 120ms ease;
+  outline: none;
+}
+
+.md-comment-highlight[data-resolved="true"] {
+  text-decoration-color: color-mix(in srgb, var(--hl) 38%, transparent);
+}
+
+/* Emphasized state: hovering/focusing the highlight itself, OR its block badge. */
+.md-comment-highlight:hover,
+.md-comment-highlight:focus-visible,
+.md-comment-highlight[data-emphasized="true"] {
+  background-color: color-mix(in srgb, var(--hl) 16%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--hl) 100%, transparent);
+}
+
+.md-comment-highlight:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hl) 55%, transparent);
+}
+
+/* Dark: the identity hues are all dark (L ≤ 42%), so a low-alpha mark on the
+ * near-black page can vanish — raise ONLY the resting/resolved underline alpha
+ * (hue-preserving) so it stays a visible hairline; keep the hover fill restrained
+ * so glyphs stay readable. */
+.dark .md-comment-highlight {
+  text-decoration-color: color-mix(in srgb, var(--hl) 60%, transparent);
+}
+
+.dark .md-comment-highlight[data-resolved="true"] {
+  text-decoration-color: color-mix(in srgb, var(--hl) 30%, transparent);
+}
+
+.dark .md-comment-highlight:hover,
+.dark .md-comment-highlight:focus-visible,
+.dark .md-comment-highlight[data-emphasized="true"] {
+  background-color: color-mix(in srgb, var(--hl) 22%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--hl) 90%, transparent);
+}
+
+/* Live selection overlay (CommentsLayer) — tinted to the CURRENT user's own
+ * color via an inline `--hl-color`; falls back to accent if no self color yet. */
+[data-selection-highlight] {
+  background-color: color-mix(in srgb, var(--hl-color, var(--accent)) 25%, transparent);
+}
+.dark [data-selection-highlight] {
+  background-color: color-mix(in srgb, var(--hl-color, var(--accent)) 28%, transparent);
+}
+
+/*
+ * Notification-badge "pop" — fired ONCE on the enter of a newly-added comment
+ * avatar or emoji reaction (never on initial document load or on plain React
+ * re-renders; the new-vs-existing gate lives in JS via useMountedKeys). A subtle
+ * scale-from-0.6 + fade with a slight overshoot, consistent with the restrained
+ * motion used elsewhere. The transform is on the isolated badge child element
+ * (avatar / reaction chip / reaction button) — NOT the preview container — so
+ * getBoundingClientRect pin geometry never drifts.
+ */
+@keyframes badge-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-badge-pop {
+  transform-origin: center;
+  animation: badge-pop 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No transform / opacity motion — the element simply appears. */
+  .animate-badge-pop {
+    animation: none;
+  }
+}
+
+/* Transitions.dev "Icon swap": two stacked icons in a 1x1 grid, crossfaded with
+ * blur + scale, toggled by data-state. Used by the mobile ActionBar FAB to morph
+ * the Plus icon into an X when the menu opens. */
+:root {
+  --icon-swap-dur: 250ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
+}
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  transition:
+    opacity var(--icon-swap-dur) var(--icon-swap-ease),
+    filter var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="a"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="b"] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="b"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="a"] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-icon-swap .t-icon {
+    transition: none !important;
+  }
+}
+
+/* Bottom-sheet enter/exit for the mobile Help surface. Self-contained so it
+ * never inherits the centered-dialog zoom/slide-from-top animations. Base UI
+ * toggles data-open / data-closed + data-starting-style / data-ending-style. */
+.help-sheet {
+  transition:
+    transform 200ms ease,
+    opacity 200ms ease;
+}
+.help-sheet[data-starting-style],
+.help-sheet[data-ending-style] {
+  transform: translateY(100%);
+  opacity: 0;
+}
+.help-sheet[data-open] {
+  transform: translateY(0);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-sheet {
+    transition: opacity 120ms ease;
+  }
+  .help-sheet[data-starting-style],
+  .help-sheet[data-ending-style] {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+/*
+ * Error-state shake (Transitions.dev technique) for the password gate input.
+ * The <input> owns the transform (.t-input). The Field wrapper carries
+ * .is-error, which drives the same destructive border as the input's existing
+ * aria-invalid:border-destructive utility — so manual validation and a rejected
+ * password read identically. Honors prefers-reduced-motion.
+ */
+:root {
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --revert-hold: 3000ms;
+  --revert-dur: 280ms;
+}
+.t-input {
+  transition: border-color var(--revert-dur) ease-out;
+  will-change: transform;
+}
+.t-input.is-shaking {
+  animation: t-input-shake calc(var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2) linear;
+}
+@keyframes t-input-shake {
+  0% {
+    transform: translateX(0);
+    animation-timing-function: var(--shake-ease);
+  }
+  28.57% {
+    transform: translateX(var(--shake-distance));
+    animation-timing-function: var(--shake-ease);
+  }
+  57.14% {
+    transform: translateX(calc(var(--shake-distance) * -1));
+    animation-timing-function: var(--shake-ease);
+  }
+  78.57% {
+    transform: translateX(var(--shake-overshoot));
+    animation-timing-function: var(--shake-ease);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+/* The wrapper's error state drives the destructive border on its input, using
+ * the existing --destructive token so the color matches aria-invalid. */
+.is-error .t-input {
+  border-color: var(--destructive);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-input {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

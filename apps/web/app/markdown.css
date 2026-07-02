@@ -1,0 +1,212 @@
+/*
+ * Scoped prose styles for rendered Markdown. All colors come from design
+ * tokens (CSS vars) — never hardcoded. Inter for prose, Fragment Mono for code.
+ * Code BLOCKS are owned by Shiki (inline-style background/colors); we only style
+ * inline `code` here. The Shiki dual-theme rule at the bottom swaps colors under
+ * `.dark` without re-highlighting.
+ */
+
+.md-prose {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.7;
+  word-wrap: break-word;
+}
+
+/* Vertical rhythm */
+.md-prose > * + * {
+  margin-top: 1.1em;
+}
+
+/* Headings */
+.md-prose h1,
+.md-prose h2,
+.md-prose h3,
+.md-prose h4,
+.md-prose h5,
+.md-prose h6 {
+  font-family: var(--font-geist), system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+.md-prose h1 {
+  font-size: 2.375rem;
+  letter-spacing: -0.02em;
+  margin-top: 0;
+}
+.md-prose h2 {
+  font-size: 1.625rem;
+  margin-top: 2em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.md-prose h3 {
+  font-size: 1.25rem;
+  margin-top: 1.6em;
+}
+.md-prose h4 {
+  font-size: 1.05rem;
+  margin-top: 1.4em;
+}
+.md-prose h5,
+.md-prose h6 {
+  font-size: 0.95rem;
+  margin-top: 1.2em;
+}
+
+/* Links */
+.md-prose a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.md-prose a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Paragraph / emphasis */
+.md-prose strong {
+  font-weight: 600;
+}
+
+/* Lists */
+.md-prose ul,
+.md-prose ol {
+  padding-left: 1.6em;
+}
+.md-prose ul {
+  list-style: disc;
+}
+.md-prose ol {
+  list-style: decimal;
+}
+.md-prose li + li {
+  margin-top: 0.35em;
+}
+.md-prose li > ul,
+.md-prose li > ol {
+  margin-top: 0.35em;
+}
+/* GFM task lists */
+.md-prose li input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: var(--accent);
+}
+.md-prose li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+/* Blockquote */
+.md-prose blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* Horizontal rule */
+.md-prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin-top: 2em;
+  margin-bottom: 2em;
+}
+
+/* Inline code (NOT code blocks — those are owned by Shiki) */
+.md-prose :not(pre) > code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: var(--secondary);
+  color: var(--foreground);
+  padding: 0.15em 0.4em;
+  border-radius: calc(var(--radius) * 0.4);
+  white-space: break-spaces;
+}
+
+/* Code blocks (rehype-highlight emits <code class="hljs language-x">) */
+.md-prose pre {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  padding: 1em 1.1em;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  overflow-x: auto;
+  tab-size: 2;
+}
+.md-prose pre code {
+  font-family: inherit;
+  background: transparent;
+  color: var(--foreground);
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Tables */
+.md-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.925rem;
+  display: block;
+  overflow-x: auto;
+}
+.md-prose th,
+.md-prose td {
+  border: 1px solid var(--border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.md-prose th {
+  background: var(--secondary);
+  font-weight: 600;
+}
+
+/* Images */
+.md-prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+/* Deemphasized strikethrough (GFM) */
+.md-prose del {
+  color: var(--muted-foreground);
+}
+
+/*
+ * highlight.js token palette — theme-aware via design tokens (flip under .dark).
+ * Colors chosen to meet WCAG AA on --code-bg in both themes.
+ */
+.md-prose .hljs-keyword,
+.md-prose .hljs-built_in,
+.md-prose .hljs-type,
+.md-prose .hljs-literal,
+.md-prose .hljs-symbol {
+  color: var(--hl-keyword);
+}
+.md-prose .hljs-string,
+.md-prose .hljs-attr,
+.md-prose .hljs-meta .hljs-string {
+  color: var(--hl-string);
+}
+.md-prose .hljs-number,
+.md-prose .hljs-regexp {
+  color: var(--hl-number);
+}
+.md-prose .hljs-title,
+.md-prose .hljs-name,
+.md-prose .hljs-section,
+.md-prose .hljs-function .hljs-title {
+  color: var(--hl-title);
+}
+.md-prose .hljs-comment,
+.md-prose .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}

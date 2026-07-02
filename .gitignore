@@ -1,0 +1,19 @@
+node_modules/
+.next/
+.env*
+!.env.example
+!.env.deploy.example
+.DS_Store
+dist/
+build/
+*.log
+.vercel
+.supabase
+coverage/
+playwright-report/
+test-results/
+# Local-only case study / dev-process log (never committed)
+case-study/
+# Git worktrees (isolated workspaces)
+.claude/worktrees/
+inspector.json

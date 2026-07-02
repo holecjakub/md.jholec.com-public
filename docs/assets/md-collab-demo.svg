@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" role="img" aria-label="md.jholec.com — several people quietly reviewing the same markdown document: one reviewer highlights a passage and writes a comment, another highlights a passage and reacts with an emoji, a third simply highlights text — each in their own colour.">
+  <title>md.jholec.com — collaborative markdown review</title>
+  <desc>A minimal, slow loop on a ghost (skeleton) markdown document. Three cursors (no name labels) gently highlight different passages, each tinted to that reviewer's identity colour: one opens a small composer and writes a comment, one pops the emoji quick-row and reacts with a heart, and one just selects text. Reduced-motion shows the assembled state.</desc>
+
+  <defs>
+    <filter id="cardShadow" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="popShadow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Cursors (no name labels): soft presence halo + pointer, tinted per person -->
+    <g id="curShapeA"><circle cx="5" cy="5" r="12" fill="hsl(220,68%,38%)" opacity="0.13"/><path d="M0,0 L0,17 L4.4,13.2 L7.3,19.4 L9.9,18.2 L7.1,12.2 L12.6,12.2 Z" fill="hsl(220,68%,38%)" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/></g>
+    <g id="curShapeB"><circle cx="5" cy="5" r="12" fill="hsl(330,65%,40%)" opacity="0.13"/><path d="M0,0 L0,17 L4.4,13.2 L7.3,19.4 L9.9,18.2 L7.1,12.2 L12.6,12.2 Z" fill="hsl(330,65%,40%)" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/></g>
+    <g id="curShapeC"><circle cx="5" cy="5" r="12" fill="hsl(168,65%,30%)" opacity="0.13"/><path d="M0,0 L0,17 L4.4,13.2 L7.3,19.4 L9.9,18.2 L7.1,12.2 L12.6,12.2 Z" fill="hsl(168,65%,30%)" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/></g>
+  </defs>
+
+  <style>
+    /* ====== 22s slow, gentle loop ====== */
+    *{ transform-box: fill-box; }
+    .doc,.sel,.uline,.cur,.comp,.mark,.gline,.send,.emoji,.heart{ animation-duration: 22s; animation-iteration-count: infinite; }
+    .doc{ animation-name: docIn; opacity:0; transform-origin:640px 360px; animation-timing-function: cubic-bezier(0.05,0.7,0.1,1); }
+    .sel{ transform-origin:left center; opacity:0; animation-timing-function: cubic-bezier(0.2,0,0,1); }
+    .uline{ transform-origin:left center; opacity:0; animation-timing-function: cubic-bezier(0.2,0,0,1); }
+    .cur{ opacity:0; animation-timing-function: cubic-bezier(0.45,0.05,0.55,0.95); }
+    .gline{ transform-origin:left center; opacity:0; animation-timing-function: cubic-bezier(0.2,0,0,1); }
+    .drift{ animation: drift 5.5s cubic-bezier(0.45,0.05,0.55,0.95) infinite; }
+    @keyframes drift{ 0%,100%{ transform: translate(0,0);} 50%{ transform: translate(2px,-2px);} }
+
+    @keyframes docIn{
+      0%{opacity:0; transform:translateY(8px) scale(0.992);}
+      4%{opacity:1; transform:translateY(0) scale(1);}
+      93%{opacity:1; transform:translateY(0) scale(1);}
+      98%,100%{opacity:0; transform:translateY(8px) scale(0.992);}
+    }
+
+    /* ===== selections (subtle, code-grounded ~0.20 alpha) ===== */
+    .selA{ animation-name:selA; } .ulA{ animation-name:ulA; }
+    @keyframes selA{0%,9%{opacity:0;transform:scaleX(0);}9.5%{opacity:0.20;transform:scaleX(0);}16%{opacity:0.20;transform:scaleX(1);}92%{opacity:0.18;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+    @keyframes ulA{0%,33%{opacity:0;transform:scaleX(0);}36%{opacity:0.62;transform:scaleX(1);}92%{opacity:0.62;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+    .selB{ animation-name:selB; } .ulB{ animation-name:ulB; }
+    @keyframes selB{0%,42%{opacity:0;transform:scaleX(0);}42.5%{opacity:0.20;transform:scaleX(0);}48%{opacity:0.20;transform:scaleX(1);}92%{opacity:0.18;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+    @keyframes ulB{0%,56%{opacity:0;transform:scaleX(0);}59%{opacity:0.62;transform:scaleX(1);}92%{opacity:0.62;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+    .selC{ animation-name:selC; } .ulC{ animation-name:ulC; }
+    @keyframes selC{0%,64%{opacity:0;transform:scaleX(0);}64.5%{opacity:0.24;transform:scaleX(0);}70%{opacity:0.24;transform:scaleX(1);}92%{opacity:0.22;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+    @keyframes ulC{0%,70%{opacity:0;transform:scaleX(0);}73%{opacity:0.66;transform:scaleX(1);}92%{opacity:0.66;transform:scaleX(1);}96%,100%{opacity:0;transform:scaleX(1);}}
+
+    /* ===== cursors ===== */
+    .curA{ animation-name:curA; }
+    @keyframes curA{
+      0%,5%{opacity:0;transform:translate(330px,400px);}
+      7%{opacity:1;transform:translate(350px,250px);}
+      9%{opacity:1;transform:translate(356px,184px);}
+      16%{opacity:1;transform:translate(584px,184px);}
+      29%{opacity:1;transform:translate(560px,250px);}
+      31%{opacity:1;transform:translate(548px,256px);}
+      31.6%{opacity:1;transform:translate(548px,258px);}
+      48%{opacity:1;transform:translate(602px,208px);}
+      74%{opacity:1;transform:translate(592px,200px);}
+      90%{opacity:1;transform:translate(598px,206px);}
+      95%,100%{opacity:0;transform:translate(660px,300px);}
+    }
+    .curB{ animation-name:curB; }
+    @keyframes curB{
+      0%,38%{opacity:0;transform:translate(940px,440px);}
+      40%{opacity:1;transform:translate(620px,372px);}
+      42%{opacity:1;transform:translate(316px,366px);}
+      48%{opacity:1;transform:translate(586px,366px);}
+      51%{opacity:1;transform:translate(432px,420px);}
+      52.5%{opacity:1;transform:translate(429px,423px);}
+      72%{opacity:1;transform:translate(470px,388px);}
+      90%{opacity:1;transform:translate(462px,382px);}
+      95%,100%{opacity:0;transform:translate(520px,470px);}
+    }
+    .curC{ animation-name:curC; }
+    @keyframes curC{
+      0%,60%{opacity:0;transform:translate(360px,580px);}
+      62%{opacity:1;transform:translate(330px,524px);}
+      64%{opacity:1;transform:translate(296px,476px);}
+      70%{opacity:1;transform:translate(536px,476px);}
+      82%{opacity:1;transform:translate(542px,484px);}
+      90%{opacity:1;transform:translate(534px,478px);}
+      95%,100%{opacity:0;transform:translate(440px,580px);}
+    }
+
+    /* ===== A: comment composer (ghost typing) ===== */
+    .compA{ opacity:0; transform-origin:470px 226px; animation:compA 22s cubic-bezier(0.05,0.7,0.1,1) infinite; }
+    @keyframes compA{
+      0%,16.5%{opacity:0;transform:translateY(6px) scale(0.96);}
+      19%{opacity:1;transform:translateY(0) scale(1);}
+      31.5%{opacity:1;transform:translateY(0) scale(1);}
+      33%,100%{opacity:0;transform:translateY(5px) scale(0.97);}
+    }
+    .gA1{ animation-name:gA1; } .gA2{ animation-name:gA2; }
+    @keyframes gA1{0%,20%{opacity:0;transform:scaleX(0);}26%{opacity:1;transform:scaleX(1);}31.5%{opacity:1;transform:scaleX(1);}33%,100%{opacity:0;transform:scaleX(1);}}
+    @keyframes gA2{0%,26%{opacity:0;transform:scaleX(0);}31%{opacity:1;transform:scaleX(1);}31.5%{opacity:1;transform:scaleX(1);}33%,100%{opacity:0;transform:scaleX(1);}}
+    .sendAf{ animation:sendAf 22s steps(1,end) infinite; }   /* faint send while empty */
+    @keyframes sendAf{0%{opacity:1;}20%{opacity:1;}26%{opacity:0;}100%{opacity:0;}}
+    .sendAs{ opacity:0; transform-origin:548px 258px; animation:sendAs 22s infinite; }  /* solid send after text */
+    @keyframes sendAs{
+      0%,26%{opacity:0;transform:scale(1);}
+      26.001%{opacity:1;transform:scale(1);animation-timing-function:cubic-bezier(0.175,0.885,0.32,1.275);}
+      27%{opacity:1;transform:scale(1.08);}
+      28%{opacity:1;transform:scale(1);}
+      31%{opacity:1;transform:scale(1);}
+      31.3%{opacity:1;transform:scale(0.9);animation-timing-function:cubic-bezier(0.3,0,1,1);}
+      31.8%{opacity:1;transform:scale(1);}
+      32.8%{opacity:1;}
+      33%,100%{opacity:0;transform:scale(1);}
+    }
+    /* A comment marker in the margin (persists) */
+    .markA{ opacity:0; transform-origin:996px 198px; animation:markA 22s cubic-bezier(0.05,0.7,0.1,1) infinite; }
+    @keyframes markA{0%,33%{opacity:0;transform:translateX(8px) scale(0.9);}36%{opacity:1;transform:translateX(0) scale(1);}92%{opacity:1;transform:translateX(0) scale(1);}96%,100%{opacity:0;transform:translateX(8px) scale(0.9);}}
+
+    /* ===== B: emoji quick-row + react ===== */
+    .compB{ opacity:0; transform-origin:451px 402px; animation:compB 22s cubic-bezier(0.05,0.7,0.1,1) infinite; }
+    @keyframes compB{
+      0%,48.5%{opacity:0;transform:translateY(6px) scale(0.96);}
+      51%{opacity:1;transform:translateY(0) scale(1);}
+      55%{opacity:1;transform:translateY(0) scale(1);}
+      56.5%,100%{opacity:0;transform:translateY(5px) scale(0.97);}
+    }
+    .heartB{ opacity:0; transform-origin:429px 430px; animation:heartB 22s infinite; }
+    @keyframes heartB{
+      0%,51.5%{opacity:0;transform:scale(1);}
+      52%{opacity:1;transform:scale(1);animation-timing-function:cubic-bezier(0.175,0.885,0.32,1.275);}
+      53%{opacity:1;transform:scale(1.22);}
+      54.2%{opacity:1;transform:scale(1);}
+      56%{opacity:1;transform:scale(1);}
+      56.5%,100%{opacity:0;transform:scale(1);}
+    }
+    /* B reaction chip in the margin (persists) */
+    .markB{ opacity:0; transform-origin:998px 374px; animation:markB 22s cubic-bezier(0.05,0.7,0.1,1) infinite; }
+    @keyframes markB{0%,56%{opacity:0;transform:translateX(8px) scale(0.9);}59%{opacity:1;transform:translateX(0) scale(1);}92%{opacity:1;transform:translateX(0) scale(1);}96%,100%{opacity:0;transform:translateX(8px) scale(0.9);}}
+
+    /* ====== reduced motion: the quiet assembled state ====== */
+    @media (prefers-reduced-motion: reduce){
+      .doc{animation:none;opacity:1;transform:none;}
+      .sel{animation:none;transform:scaleX(1);} .selA{opacity:0.18;} .selB{opacity:0.18;} .selC{opacity:0.22;}
+      .uline{animation:none;transform:scaleX(1);} .ulA,.ulB{opacity:0.62;} .ulC{opacity:0.66;}
+      .cur{animation:none;opacity:1;} .curA{transform:translate(598px,206px);} .curB{transform:translate(462px,382px);} .curC{transform:translate(534px,478px);}
+      .drift{animation:none;}
+      .comp,.gline,.send,.heart{animation:none;opacity:0;}
+      .mark{animation:none;opacity:1;transform:none;}
+    }
+  </style>
+
+  <!-- page -->
+  <rect x="0" y="0" width="1280" height="720" fill="#050506"/>
+
+  <!-- ghost document -->
+  <g class="doc">
+    <rect x="240" y="80" width="800" height="560" rx="16" fill="#0a0a0a" stroke="#1f1f1f" stroke-width="1" filter="url(#cardShadow)"/>
+    <rect x="288" y="138" width="330" height="24" rx="7" fill="#2b2b30"/>
+    <rect x="288" y="198" width="612" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="226" width="588" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="254" width="470" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="308" width="196" height="18" rx="6" fill="#2b2b30"/>
+    <rect x="288" y="338" width="624" height="1" fill="#1f1f1f"/>
+    <rect x="288" y="374" width="600" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="402" width="582" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="430" width="420" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="486" width="560" height="12" rx="6" fill="#202024"/>
+    <rect x="288" y="514" width="344" height="12" rx="6" fill="#202024"/>
+  </g>
+
+  <!-- selections + underlines, tinted per reviewer -->
+  <rect class="sel selA" x="356" y="190" width="230" height="22" rx="4" fill="hsl(220,68%,38%)"/>
+  <rect class="uline ulA" x="356" y="210" width="230" height="2" rx="1" fill="hsl(220,68%,38%)"/>
+  <rect class="sel selB" x="316" y="366" width="270" height="22" rx="4" fill="hsl(330,65%,40%)"/>
+  <rect class="uline ulB" x="316" y="386" width="270" height="2" rx="1" fill="hsl(330,65%,40%)"/>
+  <rect class="sel selC" x="296" y="478" width="244" height="22" rx="4" fill="hsl(168,65%,30%)"/>
+  <rect class="uline ulC" x="296" y="498" width="244" height="2" rx="1" fill="hsl(168,65%,30%)"/>
+
+  <!-- A: writes a comment (small composer with ghost typing) -->
+  <g class="comp compA">
+    <rect x="466" y="221" width="10" height="10" rx="2" transform="rotate(45 471 226)" fill="#18181a" stroke="rgba(235,235,235,0.10)" stroke-width="1"/>
+    <rect x="370" y="226" width="200" height="58" rx="14" fill="#18181a" stroke="rgba(235,235,235,0.10)" stroke-width="1" filter="url(#popShadow)"/>
+    <rect class="gline gA1" x="384" y="247" width="158" height="7" rx="3.5" fill="#3a3a40"/>
+    <rect class="gline gA2" x="384" y="262" width="112" height="7" rx="3.5" fill="#3a3a40"/>
+    <g class="send sendAf"><circle cx="548" cy="258" r="11" fill="none" stroke="rgba(168,168,168,0.30)" stroke-width="1.4"/><path d="M548,263 L548,253 M544,257 L548,253 L552,257" fill="none" stroke="rgba(168,168,168,0.45)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g class="send sendAs"><circle cx="548" cy="258" r="11" fill="#ebebeb"/><path d="M548,263 L548,253 M544,257 L548,253 L552,257" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+  </g>
+
+  <!-- A: comment marker in the right margin -->
+  <g class="mark markA">
+    <rect x="980" y="188" width="34" height="24" rx="8" fill="#18181a" stroke="hsl(220,68%,38%)" stroke-width="1.4"/>
+    <rect x="987" y="195" width="16" height="2.4" rx="1.2" fill="hsl(220,68%,46%)"/>
+    <rect x="987" y="201" width="11" height="2.4" rx="1.2" fill="hsl(220,68%,46%)"/>
+  </g>
+
+  <!-- B: reacts with an emoji (quick-row pops, heart picked) -->
+  <g class="comp compB">
+    <rect x="446" y="397" width="10" height="10" rx="2" transform="rotate(45 451 402)" fill="#18181a" stroke="rgba(235,235,235,0.10)" stroke-width="1"/>
+    <rect x="361" y="402" width="180" height="44" rx="14" fill="#18181a" stroke="rgba(235,235,235,0.10)" stroke-width="1" filter="url(#popShadow)"/>
+    <g font-size="17">
+      <text x="391" y="430" text-anchor="middle">👍</text>
+      <g class="heart heartB"><circle cx="429" cy="424" r="15" fill="rgba(0,0,0,0)" stroke="hsl(330,65%,52%)" stroke-width="1.4"/></g>
+      <text x="429" y="430" text-anchor="middle">❤️</text>
+      <text x="467" y="430" text-anchor="middle">🎉</text>
+      <text x="505" y="430" text-anchor="middle">😕</text>
+    </g>
+  </g>
+
+  <!-- B: reaction chip in the right margin -->
+  <g class="mark markB">
+    <rect x="976" y="362" width="46" height="24" rx="12" fill="#18181a" stroke="rgba(235,235,235,0.10)" stroke-width="1"/>
+    <text x="991" y="380" font-size="13" text-anchor="middle">❤️</text>
+    <text x="1010" y="379" font-size="12" fill="#a8a8a8" text-anchor="middle">1</text>
+  </g>
+
+  <!-- cursors (no labels) -->
+  <g class="cur curA"><g class="drift"><use href="#curShapeA"/></g></g>
+  <g class="cur curB"><g class="drift"><use href="#curShapeB"/></g></g>
+  <g class="cur curC"><g class="drift"><use href="#curShapeC"/></g></g>
+</svg>
