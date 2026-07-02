@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-02
+## v0.1.0 — 2026-07-02
 - **Open-sourced a self-hostable build under AGPL-3.0.** The app, CLI, `@md/core`, MCP stub,
   and Supabase migrations are published as a self-hostable mirror; see the README's
   **Self-hosting** section for setup (Supabase project + any Node/Vercel host, configured

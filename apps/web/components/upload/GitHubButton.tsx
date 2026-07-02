@@ -25,7 +25,7 @@ function GitHubMark({ className }: { className?: string }) {
 export function GitHubButton() {
   return (
     <a
-      href="https://github.com/holecjakub/md.jholec.com"
+      href="https://github.com/holecjakub/md.jholec.com-public"
       target="_blank"
       rel="noopener noreferrer"
       aria-label="View md.jholec.com on GitHub (opens in a new tab)"

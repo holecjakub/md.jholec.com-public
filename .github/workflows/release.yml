@@ -1,0 +1,42 @@
+name: Release
+
+# Create a GitHub Release on this public repo when a SemVer tag is pushed.
+# The tag is pushed by the private repo's release automation (via a deploy key);
+# this workflow runs in the public repo and uses its own token, so no external
+# credential is needed. Notes are taken from the matching CHANGELOG section.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release notes for this version from CHANGELOG
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          awk -v ver="$VERSION" '
+            /^## / { if (found) exit; if (index($0, ver)) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Release ${VERSION}." > notes.md
+          echo "Notes for $VERSION:"; cat notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md

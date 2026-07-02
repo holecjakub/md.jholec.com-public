@@ -488,7 +488,7 @@ test("self-host card GitHubButton has correct href, target, rel, and accessible 
 
   const ghBtn = page.getByRole("link", { name: "View md.jholec.com on GitHub (opens in a new tab)" });
   await expect(ghBtn).toBeVisible();
-  await expect(ghBtn).toHaveAttribute("href", "https://github.com/holecjakub/md.jholec.com");
+  await expect(ghBtn).toHaveAttribute("href", "https://github.com/holecjakub/md.jholec.com-public");
   await expect(ghBtn).toHaveAttribute("target", "_blank");
   const rel = await ghBtn.getAttribute("rel");
   expect(rel).toContain("noopener");
