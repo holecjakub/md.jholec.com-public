@@ -22,7 +22,7 @@ const fragmentMono = Fragment_Mono({
 export const metadata: Metadata = {
   title: "md.jholec.com",
   description:
-    "Host a Markdown file, share a link, and collect Figma-style inline feedback — no install required.",
+    "Host a Markdown file, share a link, and collect inline feedback pinned to the exact words, no install required.",
 };
 
 export default function RootLayout({

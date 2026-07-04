@@ -19,8 +19,8 @@ export default function Home() {
             Markdown, shared for feedback.
           </h1>
           <p className="text-balance text-lg leading-relaxed text-muted-foreground">
-            Host a Markdown file, share a link, and collect Figma-style inline
-            feedback — no install required.
+            Host a Markdown file, share a link, and collect inline feedback
+            pinned to the exact words, no install required.
           </p>
           <p className="text-sm text-muted-foreground">
             Documents open at{" "}

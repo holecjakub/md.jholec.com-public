@@ -6,7 +6,7 @@
 
 A hosted **markdown collaboration & feedback** service. The author uploads a `.md`,
 gets a shareable link, and reviewers open it in the browser, read a clean rendered
-preview, and leave **Figma-style inline comments + emoji reactions** anchored to the
+preview, and leave **inline comments + emoji reactions** anchored to the
 exact text they select — no install, no markdown knowledge, no account. Reviewers
 annotate; they never edit the source. The author keeps the markdown as the canonical
 artifact and can download it at any time **with all feedback embedded**.
