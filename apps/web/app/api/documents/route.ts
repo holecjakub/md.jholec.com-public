@@ -86,7 +86,7 @@ export async function POST(req: Request) {
 
   const { error: tErr } = await db.from("access_tokens").insert([
     { document_id: doc.id, token_hash: sha256hex(inviteToken), kind: "invite", reusable: true, expires_at: expires },
-    { document_id: doc.id, token_hash: sha256hex(ownerToken), kind: "owner", reusable: false, expires_at: expires },
+    { document_id: doc.id, token_hash: sha256hex(ownerToken), kind: "owner", reusable: true, expires_at: expires },
   ]);
   if (tErr) return error(500, "Failed to create access tokens");
 

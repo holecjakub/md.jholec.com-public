@@ -96,15 +96,24 @@ test("a comments:write-only PAT gets 403 from /share and /pat while the owner se
   expect(minted.token).toMatch(/^pat_/);
 });
 
-test("concurrent redeems of a single-use owner token mint exactly one session (M3)", async ({
+test("owner capability link supports repeated re-entry (reusable owner token)", async ({
   page,
   playwright,
 }) => {
   const doc = await createDoc(page);
   const base = `http://localhost:${process.env.PORT ?? 3000}`;
 
-  // Four independent cookie-less clients race to redeem the SAME single-use
-  // owner capability token concurrently.
+  // The owner link is now a REUSABLE capability (fix/owner-link-reentry): the
+  // owner must be able to re-open their OWN document at any time — a new browser,
+  // or after the 1h owner session expires — not only once. So repeated (and even
+  // concurrent) redeems of the same owner token each mint a fresh OWNER session,
+  // and the owner never gets silently downgraded to a reviewer/password session
+  // (which broke Revoke & regenerate and every other owner-only control).
+  //
+  // This deliberately drops the previous single-use "theft-detection" property:
+  // in a no-accounts, link-based product the owner link IS the credential, and a
+  // one-shot owner link makes re-entry impossible. The link stays bounded by the
+  // 30-day expiry (dies with the document) and is revocable via revoked_at.
   const RACERS = 4;
   const contexts: APIRequestContext[] = await Promise.all(
     Array.from({ length: RACERS }, () => playwright.request.newContext()),
@@ -118,18 +127,18 @@ test("concurrent redeems of a single-use owner token mint exactly one session (M
   );
 
   const statuses = results.map((r) => r.status());
-  const winners = statuses.filter((s) => s === 200);
-  const losers = statuses.filter((s) => s === 401);
-  // The compare-and-swap consume admits exactly one winner; everyone else sees
-  // "Invalid token". Any other status (429, 5xx) would also fail these asserts.
-  expect(winners, `statuses: ${statuses.join(", ")}`).toHaveLength(1);
-  expect(losers, `statuses: ${statuses.join(", ")}`).toHaveLength(RACERS - 1);
+  // Every redeem succeeds (the token is not consumed)…
+  expect(statuses, `statuses: ${statuses.join(", ")}`).toEqual(Array(RACERS).fill(200));
+  // …and every session is an OWNER session.
+  const roles = await Promise.all(results.map(async (r) => ((await r.json()) as { role: string }).role));
+  expect(roles, `roles: ${roles.join(", ")}`).toEqual(Array(RACERS).fill("owner"));
 
-  // The token is spent: a later, non-racing redeem is rejected too.
-  const late = await contexts[0]!.post(`${base}/api/d/${doc.slug}/redeem`, {
+  // A later, non-racing redeem still works — genuine re-entry after the fact.
+  const later = await contexts[0]!.post(`${base}/api/d/${doc.slug}/redeem`, {
     data: { token: doc.ownerToken, name: "Latecomer" },
   });
-  expect(late.status()).toBe(401);
+  expect(later.status(), await later.text()).toBe(200);
+  expect(((await later.json()) as { role: string }).role).toBe("owner");
 
   await Promise.all(contexts.map((ctx) => ctx.dispose()));
 });

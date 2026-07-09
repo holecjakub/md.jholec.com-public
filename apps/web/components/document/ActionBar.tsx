@@ -469,18 +469,33 @@ function useCopyDocument(slug: string) {
 function useRevokeReviewerLink(slug: string) {
   const [state, setState] = useState<"idle" | "working" | "done" | "error">("idle");
   const announce = useAnnounce();
-  const run = useCallback(async () => {
+  const run = useCallback(async (): Promise<boolean> => {
     setState("working");
     try {
       await revokeShareLinks(slug);
       const url = await createShareLink(slug);
-      await navigator.clipboard.writeText(url);
+      // Clipboard write is BEST-EFFORT: WebKit/Safari rejects writeText once the
+      // click's transient-activation window has lapsed (it has, after the two
+      // awaited fetches above), so a clipboard failure must NOT report a
+      // server-side-successful revoke+regenerate as failed. Track it separately.
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        copied = false;
+      }
       haptic();
       setState("done");
-      announce("Reviewer link revoked. A fresh link was copied to your clipboard.");
+      announce(
+        copied
+          ? "Reviewer link revoked. A fresh link was copied to your clipboard."
+          : "Reviewer link revoked. Use “Copy reviewer link” to copy the fresh link.",
+      );
+      return true;
     } catch {
       setState("error");
       announce("Couldn’t revoke the reviewer link. Please try again.");
+      return false;
     }
   }, [slug, announce]);
   return { state, run };
@@ -628,10 +643,11 @@ function RevokeReviewerLinkConfirm({
         <button
           type="button"
           onClick={() => {
-            void run().then(() => {
-              // Close on success; keep the popover open on error so the user can
-              // read the failure and retry.
-              window.setTimeout(onClose, 600);
+            void run().then((ok) => {
+              // Close ONLY on success; keep the popover open on error so the user
+              // can read the failure and retry. `run()` swallows its own errors
+              // and resolves to false on failure, so gate the close on the result.
+              if (ok) window.setTimeout(onClose, 600);
             });
           }}
           disabled={state === "working"}
