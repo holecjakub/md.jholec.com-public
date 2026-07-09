@@ -8,7 +8,8 @@
  * can still request the source-embedded Markdown format.
  *
  * Security tradeoffs (user-approved, documented in design spec §4):
- *  - Token is read-only (docs:read + comments:read), single-document, 30-day, revocable.
+ *  - Token is read-only (docs:read + comments:read), single-document, 30-day, and
+ *    revocable by the owner via DELETE /api/d/[slug]/pat (CLI: `md revoke`).
  *  - Referrer-Policy: no-referrer prevents the token leaking in the Referer header when
  *    the agent follows links within the document.
  *  - Cache-Control: no-store prevents the token reaching intermediate caches.
@@ -220,11 +221,15 @@ export async function GET(
   // Step 2: resolve the document by slug.
   // Unknown slug → 404 (slug is non-secret; it appears in reviewer links).
   const db = admin();
-  const { data: doc } = await db
+  const { data: doc, error: docErr } = await db
     .from("documents")
     .select("id, slug, title, current_version_id")
     .eq("slug", slug)
     .maybeSingle();
+  // A DB error is an outage, not a missing row — don't mask it as 404 (audit 3.5).
+  if (docErr) {
+    return textResponse("Service unavailable.", 500);
+  }
   if (!doc) {
     return textResponse("Document not found.", 404);
   }
@@ -247,11 +252,14 @@ export async function GET(
   if (!doc.current_version_id) {
     return textResponse("Document not found.", 404);
   }
-  const { data: version } = await db
+  const { data: version, error: versionErr } = await db
     .from("document_versions")
     .select("content")
     .eq("id", doc.current_version_id)
-    .single();
+    .maybeSingle();
+  if (versionErr) {
+    return textResponse("Service unavailable.", 500);
+  }
   if (!version) {
     return textResponse("Document not found.", 404);
   }

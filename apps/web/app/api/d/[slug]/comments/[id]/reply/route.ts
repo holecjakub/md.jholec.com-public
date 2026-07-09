@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { admin } from "@/lib/db/admin";
 import { requireDocAccess } from "@/lib/auth/require";
-import { broadcastDocumentChange } from "@/lib/realtime/broadcast";
+import { scheduleDocumentChangeBroadcast } from "@/lib/realtime/broadcast";
 import { clientIp, isIpRateLimited } from "@/lib/auth/rate-limit";
 import { error, json } from "@/lib/http";
 
@@ -44,7 +44,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string; 
     .single();
   if (e || !data) return error(500, "Failed to create reply");
 
-  await broadcastDocumentChange(access.access.documentId, { kind: "reply", commentId: data.id });
+  scheduleDocumentChangeBroadcast(access.access.documentId, { kind: "reply", commentId: data.id });
 
   return json({ comment: data }, 201);
 }

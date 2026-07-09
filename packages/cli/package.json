@@ -6,10 +6,10 @@
   "files": ["dist"],
   "scripts": {
     "build": "node build.mjs",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "pnpm exec tsc --noEmit",
+    "lint": "pnpm exec eslint src",
+    "test": "pnpm exec vitest run"
   },
   "dependencies": { "@md/core": "workspace:*", "commander": "^12.1.0" },
-  "devDependencies": { "esbuild": "^0.27.0", "vitest": "^2.1.0" }
+  "devDependencies": { "esbuild": "^0.27.0", "vitest": "^3.2.4" }
 }

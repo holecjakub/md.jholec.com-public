@@ -54,10 +54,13 @@ export function ReactionBar({
               onToggle(emoji);
             }}
             className={cn(
-              "inline-flex h-8 items-center justify-center rounded-full border text-sm leading-none transition-colors",
+              // min-h-11 / min-w-11 = a real ≥44px touch target (WCAG 2.5.5),
+              // not the old 32px chip. The box IS the target, so nothing overlaps
+              // its neighbours in the wrap row.
+              "inline-flex min-h-11 items-center justify-center rounded-full border text-sm leading-none transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               // Pill (emoji + count) when reacted; round add-button when empty.
-              hasCount ? "gap-1 px-2.5" : "w-8 px-0",
+              hasCount ? "gap-1 px-3" : "min-w-11 px-0",
               popReaction && "motion-safe:animate-badge-pop",
               mine
                 ? "border-accent bg-accent/15 text-foreground ring-1 ring-accent hover:bg-accent/20"

@@ -8,7 +8,7 @@ import { SpiralLoader } from "./SpiralLoader";
  * the gate/checking screen and the in-document overlay — instead of jumping when
  * one swaps for the other.
  */
-export function LoadingState({ label = "Loading…" }: { label?: string }) {
+export function LoadingState({ label }: { label: string }) {
   return (
     <div
       role="status"

@@ -131,4 +131,51 @@ describe("comments-md", () => {
   it("parses content with no appendix as zero threads", () => {
     expect(parseComments(CONTENT).threads).toEqual([]);
   });
+
+  // ── Over-match / misplaced-appendix regressions (audit findings 1.1 + 1.9) ──
+
+  it("mid-file marker mention + later '-->': content survives strip and round-trips", () => {
+    // Before the (?!-->) body guard, BLOCK_RE matched from the mid-file mention all
+    // the way to the file's last `-->`, so stripComments silently deleted the prose
+    // in between on every upload / `md push`.
+    const tricky = [
+      "# Doc",
+      "",
+      `Example: <!-- ${COMMENTS_MARKER} v1 example --> as documented.`,
+      "",
+      "Important prose that must survive stripping.",
+      "",
+      "<!-- unrelated html comment -->",
+      "",
+    ].join("\n");
+
+    expect(stripComments(tricky).trimEnd()).toBe(tricky.trimEnd());
+
+    // The mention is not an appendix: no threads, content intact, no throw.
+    const parsed = parseComments(tricky);
+    expect(parsed.threads).toEqual([]);
+    expect(parsed.content.trimEnd()).toBe(tricky.trimEnd());
+
+    // Full round-trip with a real appendix appended after the tricky content.
+    const out = serializeComments(tricky, [thread]);
+    const { content, threads } = parseComments(out);
+    expect(content.trimEnd()).toBe(tricky.trimEnd());
+    expect(threads).toEqual([thread]);
+  });
+
+  it("appendix followed by a trailer: parseComments fails loud, stripComments keeps the trailer", () => {
+    // Before the fix the $-anchored regex simply failed to match, so parseComments
+    // returned zero threads with the appendix JSON still inside `content` and
+    // stripComments leaked it (author names, bodies) into stored document content.
+    const withTrailer = serializeComments(CONTENT, [thread]) + "\nP.S. appended after pull\n";
+
+    expect(() => parseComments(withTrailer)).toThrow(CommentsParseError);
+
+    const stripped = stripComments(withTrailer);
+    expect(stripped).not.toContain(COMMENTS_MARKER);
+    expect(stripped).not.toContain("Alice"); // no comment JSON leaks into content
+    expect(stripped).toContain("Highlights of the quarter were strong.");
+    expect(stripped).toContain("P.S. appended after pull");
+    expect(stripped.startsWith("# Report")).toBe(true);
+  });
 });

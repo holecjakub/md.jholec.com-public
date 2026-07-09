@@ -2,14 +2,12 @@ import type { ApiClient } from "./client";
 import type {
   AgentLinkResult,
   Comment,
-  CommentThread,
   CreateDocInput,
   CreateDocResult,
   DocumentDetail,
-  DocumentSummary,
   PushVersionResult,
   Reaction,
-  WhoAmI,
+  RevokeResult,
 } from "./types";
 
 export class ApiError extends Error {
@@ -39,9 +37,15 @@ export interface Api {
   pushVersion(slug: string, content: string, title?: string): Promise<PushVersionResult>;
   /** Mint a read-only export PAT for an owned document and return its agent read URL. */
   mintAgentLink(slug: string): Promise<AgentLinkResult>;
-  listDocuments(): Promise<DocumentSummary[]>;
+  /**
+   * Revoke ALL personal access tokens bound to an owned document — CLI PATs and
+   * agent read links alike. Requires owner authority ("tokens:mint"); note that the
+   * PAT making this call is itself bound to the document and is revoked too.
+   */
+  revokeTokens(slug: string): Promise<RevokeResult>;
+  /** Revoke all reusable invite share links for an owned document (owner links survive). */
+  revokeInvites(slug: string): Promise<RevokeResult>;
   listComments(slug: string, opts?: { open?: boolean }): Promise<Comment[]>;
-  getThread(slug: string, commentId: string): Promise<CommentThread>;
   reply(slug: string, commentId: string, body: string): Promise<Comment>;
   react(slug: string, commentId: string, emoji: string): Promise<Reaction>;
   /** Resolve or reopen a comment thread (owner only). */
@@ -50,7 +54,6 @@ export interface Api {
     commentId: string,
     status: "open" | "resolved",
   ): Promise<{ id: string; status: "open" | "resolved" }>;
-  whoami(): Promise<WhoAmI>;
 }
 
 export function createApi(client: ApiClient, fetchFn: FetchFn = fetch): Api {
@@ -60,11 +63,25 @@ export function createApi(client: ApiClient, fetchFn: FetchFn = fetch): Api {
       headers: { ...client.headers, ...(init?.headers ?? {}) },
     });
     const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
+    // Guard the parse: a proxy/CDN error page (e.g. an HTML 502) is not JSON, and an
+    // unguarded JSON.parse would surface as a SyntaxError instead of an ApiError
+    // carrying the HTTP status (same handling as unlockEarlyAccess/downloadDocument).
+    let data: { error?: unknown } | null = null;
+    let parseFailed = false;
+    if (text) {
+      try {
+        data = JSON.parse(text) as { error?: unknown };
+      } catch {
+        parseFailed = true; // non-JSON body; fall through to status handling
+      }
+    }
     if (!res.ok) {
       const message =
         (data && typeof data.error === "string" && data.error) || `Request failed (${res.status})`;
       throw new ApiError(res.status, message);
+    }
+    if (parseFailed) {
+      throw new ApiError(res.status, "Malformed JSON in response body");
     }
     return data as T;
   }
@@ -110,13 +127,19 @@ export function createApi(client: ApiClient, fetchFn: FetchFn = fetch): Api {
       });
     },
     async mintAgentLink(slug) {
-      const r = await request<{ token: string }>(`/d/${slug}/pat`, {
+      const r = await request<{ token: string; expiresAt: string }>(`/d/${slug}/pat`, {
         method: "POST",
         body: JSON.stringify({ name: "AI agent (read-only)", kind: "export" }),
       });
       // baseUrl is the API origin (…/api); the agent route lives at the site origin.
       const origin = client.baseUrl.replace(/\/api$/, "");
-      return { token: r.token, url: `${origin}/d/${slug}/agent/${r.token}` };
+      return { token: r.token, url: `${origin}/d/${slug}/agent/${r.token}`, expiresAt: r.expiresAt };
+    },
+    async revokeTokens(slug) {
+      return request<RevokeResult>(`/d/${slug}/pat`, { method: "DELETE" });
+    },
+    async revokeInvites(slug) {
+      return request<RevokeResult>(`/d/${slug}/share`, { method: "DELETE" });
     },
     async setCommentStatus(slug, commentId, status) {
       const r = await request<{ comment: { id: string; status: "open" | "resolved" } }>(
@@ -160,17 +183,10 @@ export function createApi(client: ApiClient, fetchFn: FetchFn = fetch): Api {
         body: JSON.stringify(title ? { content, title } : { content }),
       });
     },
-    async listDocuments() {
-      const r = await request<{ documents: DocumentSummary[] }>("/documents");
-      return r.documents;
-    },
     async listComments(slug, opts) {
       const qs = opts?.open ? "?open=true" : "";
       const r = await request<{ comments: Comment[] }>(`/d/${slug}/comments${qs}`);
       return r.comments;
-    },
-    async getThread(slug, commentId) {
-      return request<CommentThread>(`/d/${slug}/comments/${commentId}`);
     },
     async reply(slug, commentId, body) {
       const r = await request<{ comment: Comment }>(`/d/${slug}/comments/${commentId}/reply`, {
@@ -185,9 +201,6 @@ export function createApi(client: ApiClient, fetchFn: FetchFn = fetch): Api {
         body: JSON.stringify({ emoji }),
       });
       return r.reaction;
-    },
-    async whoami() {
-      return request<WhoAmI>("/whoami");
     },
   };
 }

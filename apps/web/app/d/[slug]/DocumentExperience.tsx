@@ -1,14 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { fetchDocument, redeemToken, type DocPayload } from "@/lib/document-api";
 import { Gate } from "@/components/document/Gate";
-import { DocumentView } from "@/components/document/DocumentView";
 import { ErrorState, LoadingState } from "@/components/document/states";
+
+// The ready-state experience (react-markdown + highlight + comments layer +
+// motion) is by far the heaviest part of this route. Load it lazily so the
+// checking/gate/loading phases ship only this small shell — the CSS spinner and
+// the gate paint without downloading any of the rendering pipeline. `ssr:
+// false` keeps it out of the server HTML too (the doc is fetched client-side
+// anyway, since the access token lives in the URL fragment).
+const DocumentView = dynamic(
+  () =>
+    import("@/components/document/DocumentView").then((mod) => mod.DocumentView),
+  {
+    ssr: false,
+    // Same label + centered overlay as the pre-fetch phases, so the loader
+    // doesn't jump or flicker while the chunk finishes downloading.
+    loading: () => <LoadingState label="Loading document…" />,
+  },
+);
 
 type Status =
   | { kind: "checking" }
-  | { kind: "gate"; hasToken: boolean; token: string | null }
+  | { kind: "gate"; hasToken: boolean; token: string | null; fromOwner: boolean }
   | { kind: "loading" }
   | { kind: "ready"; data: DocPayload }
   | { kind: "error"; message: string };
@@ -34,6 +51,19 @@ export function DocumentExperience({ slug }: { slug: string }) {
   const [status, setStatus] = useState<Status>({ kind: "checking" });
   // Token lives only in memory; never in state that could re-render into the URL.
   const tokenRef = useRef<StashedToken | null>(null);
+  // Which slug the stashed token belongs to (see the mount effect).
+  const tokenSlugRef = useRef(slug);
+
+  // Client-side navigation /d/a → /d/b reuses this component instance, so
+  // without a reset the OLD document stays on screen as `ready` under the new
+  // URL until the new fetch resolves (audit 3.12). Adjusting state during
+  // render (the React-sanctioned reset-on-prop-change pattern) swaps to the
+  // loader in the SAME render pass — no frame ever shows A's payload at B's URL.
+  const [renderedSlug, setRenderedSlug] = useState(slug);
+  if (renderedSlug !== slug) {
+    setRenderedSlug(slug);
+    setStatus({ kind: "checking" });
+  }
 
   // Resolve the current session into the next Status. Awaits the network call
   // first, so any state transition derived from it happens asynchronously.
@@ -60,7 +90,7 @@ export function DocumentExperience({ slug }: { slug: string }) {
           }
         }
         // No reusable name or the redeem failed → let the gate claim owner access.
-        return { kind: "gate", hasToken: true, token: stashed.token };
+        return { kind: "gate", hasToken: true, token: stashed.token, fromOwner: true };
       }
       return { kind: "ready", data: payload };
     }
@@ -70,6 +100,7 @@ export function DocumentExperience({ slug }: { slug: string }) {
         kind: "gate",
         hasToken: stashed !== null,
         token: stashed?.token ?? null,
+        fromOwner: stashed?.fromOwner ?? false,
       };
     }
     if (result.status === 404) {
@@ -94,9 +125,26 @@ export function DocumentExperience({ slug }: { slug: string }) {
   // result runs after the network round-trip — never synchronously on mount.
   useEffect(() => {
     let active = true;
-    tokenRef.current = parseFragmentToken(window.location.hash);
-    // Drop the fragment from the URL/history regardless of whether one was found.
-    window.history.replaceState(null, "", window.location.pathname);
+    // A token stashed for a PREVIOUS slug must never be offered to another
+    // document's gate — drop it when this effect re-runs for a new slug.
+    if (tokenSlugRef.current !== slug) {
+      tokenSlugRef.current = slug;
+      tokenRef.current = null;
+    }
+    // Stash the fragment token WITHOUT ever clobbering an already-stashed one
+    // with null (audit 1.7): React StrictMode double-invokes this effect in dev,
+    // and the first pass has already scrubbed the hash — so the second pass
+    // parses an empty fragment. Overwriting unconditionally dropped the token
+    // and sent every invite/owner link to the password gate.
+    const stashed = parseFragmentToken(window.location.hash);
+    if (stashed) tokenRef.current = stashed;
+    if (window.location.hash) {
+      // Drop the fragment from the URL/history whether or not it held a token.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // Warm the heavy document chunk in parallel with the session check, so
+    // reaching `ready` doesn't wait on a serial JS download after the fetch.
+    void import("@/components/document/DocumentView");
     void (async () => {
       const next = await resolveStatus();
       if (active) setStatus(next);
@@ -104,7 +152,7 @@ export function DocumentExperience({ slug }: { slug: string }) {
     return () => {
       active = false;
     };
-  }, [resolveStatus]);
+  }, [resolveStatus, slug]);
 
   const handleAuthenticated = useCallback(() => {
     setStatus({ kind: "loading" });
@@ -126,6 +174,7 @@ export function DocumentExperience({ slug }: { slug: string }) {
         <Gate
           slug={slug}
           hasFragmentToken={status.hasToken}
+          tokenFromOwner={status.fromOwner}
           token={status.token}
           onAuthenticated={handleAuthenticated}
           onTokenInvalidated={() => {
@@ -134,7 +183,10 @@ export function DocumentExperience({ slug }: { slug: string }) {
         />
       );
     case "ready":
-      return <DocumentView data={status.data} />;
+      // Keyed by slug (audit 3.12): a payload for a DIFFERENT document must
+      // remount the whole view, so useComments (and every layer below) starts
+      // fresh instead of reconciling doc B's state into doc A's tree.
+      return <DocumentView key={slug} data={status.data} />;
     case "error":
       return <ErrorState message={status.message} onRetry={handleRetry} />;
   }

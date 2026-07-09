@@ -1,13 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { MessageSquarePlus } from "lucide-react";
 import type { TextQuoteAnchor } from "@md/core";
-import { buildAnchor } from "@/lib/anchor";
-import { deleteComment, type CommentStatus, type CommentThread } from "@/lib/comments-api";
+import {
+  buildAnchor,
+  buildBlockAnchor,
+  createRelocationCache,
+  rangeFromOffsets,
+} from "@/lib/anchor";
+import type { CommentStatus, CommentThreadDTO } from "@/lib/comments-api";
 import type { Role } from "@/lib/document-api";
 import { identityColor } from "@/lib/identity-color";
 import { useCoarsePointer } from "@/lib/use-coarse-pointer";
+import { useToast } from "@/components/ui/toast";
 import { SelectionComposer } from "./SelectionComposer";
 import { BadgeLayer } from "./BadgeLayer";
 import { InlineHighlightLayer } from "./InlineHighlightLayer";
@@ -16,13 +22,19 @@ import { ThreadPopover } from "./ThreadPopover";
 /**
  * Orchestrates the Medium/Docs-style commenting overlay above the preview:
  * - selection detection → inline SelectionComposer (create new comments)
+ * - keyboard creation (WCAG 2.1.1): every [data-block-id] block is focusable;
+ *   focusing one reveals a "Comment on this block" affordance, and pressing
+ *   C (or Enter) opens the SelectionComposer anchored to that whole block —
+ *   commenting never requires a pointer
  * - inline underline locators on anchored text (InlineHighlightLayer); clicking
  *   one opens ONLY that text's own thread, so a paragraph with several comments
  *   on different sentences disambiguates per-text
  * - right-margin per-block testimonial badges (BadgeLayer); a quiet, non-expanding
  *   indicator whose click opens the block OVERVIEW (every thread on the paragraph)
- * - hover coupling: a shared hovered-block id ties each badge to its underline(s);
- *   an underline hover narrows that to its single thread (hovered-thread id)
+ * - hover coupling: fully imperative DOM stamping (perf H7 — hover never
+ *   re-renders React). A badge hover stamps data-emphasized on the block's
+ *   underline(s) and back on the badge; an underline hover narrows that to its
+ *   single thread's spans
  * - click → ThreadPopover (a single thread from an underline, all threads from a
  *   badge), anchored at the text
  *
@@ -43,7 +55,7 @@ export function CommentsLayer({
 }: {
   role: Role;
   container: HTMLElement | null;
-  threads: CommentThread[];
+  threads: CommentThreadDTO[];
   /**
    * The viewer's own display name, used to tint the live-selection overlay with
    * their identity color (the same hue as their avatar). Undefined before the
@@ -51,22 +63,28 @@ export function CommentsLayer({
    * falls back to `--accent` via the CSS default.
    */
   currentUserName?: string;
-  addComment: (anchor: TextQuoteAnchor, body: string, authorName?: string) => Promise<void>;
+  /**
+   * Posts a comment; resolves with the posted comment's id (null on failure).
+   * The id enables the Undo toast after an emoji quick-react (audit m7).
+   */
+  addComment: (
+    anchor: TextQuoteAnchor,
+    body: string,
+    authorName?: string,
+  ) => Promise<string | null>;
   addReply: (commentId: string, body: string) => Promise<void>;
   react: (commentId: string, emoji: string) => Promise<void>;
   setStatus: (commentId: string, status: CommentStatus) => Promise<void>;
   /**
-   * Optional injected delete mutation (owns optimistic state upstream). When the
-   * parent does not supply one, this layer falls back to a self-contained delete:
-   * it filters the affected thread/reply out locally and calls the API directly,
-   * with the realtime broadcast → upstream refetch reconciling the source of
-   * truth. Keeps owner moderation working without the parent having to wire it.
+   * The delete mutation from useComments — the SAME path the Code view uses
+   * (audit 3.10): one source of truth for the optimistic drop, the tombstone,
+   * and the failure toast + Retry. This layer never talks to the delete API
+   * itself; the upstream `threads` prop reflects the drop immediately.
    */
-  removeComment?: (commentId: string) => Promise<void>;
+  removeComment: (commentId: string) => Promise<void>;
 }) {
-  const params = useParams<{ slug?: string }>();
-  const slug = typeof params?.slug === "string" ? params.slug : "";
   const isTouch = useCoarsePointer();
+  const { toast } = useToast();
 
   // The viewer's identity color for the live-selection overlay. Null until a self
   // name is known (CSS then falls back to --accent).
@@ -75,33 +93,106 @@ export function CommentsLayer({
     [currentUserName],
   );
 
-  // Ids the owner has deleted but that the upstream `threads` prop may not have
-  // dropped yet (the realtime refetch lands a tick later). We filter these out so
-  // the popover / underline / badge vanish immediately. Ids that the prop has
-  // already dropped become inert (they simply match nothing), so the set stays
-  // negligibly small — one entry per delete in a session — with no pruning needed.
-  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(() => new Set());
   // Selection composer state. `rects` are the selection's client rectangles in
   // container-relative px, kept so we can paint a persistent highlight over the
-  // chosen text while the composer is open (the native selection clears the
-  // moment the composer's textarea takes focus).
+  // chosen text while the composer is open (on touch/keyboard the native
+  // selection clears the moment the composer's textarea takes focus; on fine
+  // pointers the composer no longer steals focus, and the overlay simply sits
+  // on top of the still-live selection). `source` records HOW the composer was
+  // opened: keyboard-created composers must focus the field immediately (the
+  // user has no pointer to click into it), pointer ones must not (audit M3).
   const [selection, setSelection] = useState<{
     rect: DOMRect;
     anchor: TextQuoteAnchor;
     rects: { top: number; left: number; width: number; height: number }[];
+    source: "pointer" | "keyboard";
   } | null>(null);
+  // The block that currently holds keyboard focus (B1): drives the visible
+  // "Comment on this block" affordance. Container-relative `top` places it.
+  const [focusedBlock, setFocusedBlock] = useState<{ blockId: string; top: number } | null>(
+    null,
+  );
+  const affordanceRef = useRef<HTMLButtonElement>(null);
   // Active block popover state (a block can carry several threads).
   const [active, setActive] = useState<
     { blockId: string; threadIds: string[]; rect: DOMRect } | null
   >(null);
-  // Shared hovered-block id powering the badge ↔ all-underlines hint.
-  const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
-  // Shared hovered-thread id: the single thread currently emphasised. Driven by
-  // inline-underline hover/focus and takes precedence over hoveredBlockId, so
-  // pointing at one sentence's underline lights ONLY that sentence — even when
-  // the paragraph carries several comments. Single-thread blocks fall through to
-  // block-id (block == thread there).
-  const [hoveredThreadId, setHoveredThreadId] = useState<string | null>(null);
+
+  // Shared relocation cache (perf H5): ONE memoized anchor→Range resolution set
+  // per container, consumed by BOTH the inline-highlight and badge layers, so a
+  // refetch/resize no longer re-runs the full container query + text walk once
+  // per thread per layer.
+  const relocationCache = useMemo(
+    () => (container ? createRelocationCache(container) : null),
+    [container],
+  );
+
+  // Hover emphasis is fully imperative (perf H7): the hovered thread/block ids
+  // live in a ref and the handlers stamp data-emphasized straight onto the
+  // matching spans + badge — a mouseover/out never re-renders this layer or the
+  // N badges. The two channels mirror the old state semantics: the thread id
+  // (underline hover/focus) takes precedence for the spans, so pointing at one
+  // sentence's underline lights ONLY that sentence — even when the paragraph
+  // carries several comments; the block id (badge hover/focus) lights every
+  // underline on the block plus the badge itself.
+  const hoverRef = useRef<{ threadId: string | null; blockId: string | null }>({
+    threadId: null,
+    blockId: null,
+  });
+  const stampedRef = useRef<Element[]>([]);
+
+  const clearEmphasis = useCallback(() => {
+    for (const el of stampedRef.current) el.removeAttribute("data-emphasized");
+    stampedRef.current = [];
+  }, []);
+
+  const applyEmphasis = useCallback(() => {
+    clearEmphasis();
+    if (!container) return;
+    const { threadId, blockId } = hoverRef.current;
+    const spanSelector = threadId
+      ? `.md-comment-highlight[data-thread-id="${cssEscape(threadId)}"]`
+      : blockId
+        ? `.md-comment-highlight[data-block-id="${cssEscape(blockId)}"]`
+        : null;
+    if (spanSelector) {
+      container.querySelectorAll<HTMLElement>(spanSelector).forEach((s) => {
+        s.setAttribute("data-emphasized", "true");
+        stampedRef.current.push(s);
+      });
+    }
+    // The block-hover channel also lights the block's badge (CSS reads
+    // data-emphasized on the button).
+    if (blockId) {
+      const badge = container.querySelector<HTMLElement>(
+        `[data-badge-block-id="${cssEscape(blockId)}"]`,
+      );
+      if (badge) {
+        badge.setAttribute("data-emphasized", "true");
+        stampedRef.current.push(badge);
+      }
+    }
+  }, [container, clearEmphasis]);
+
+  // Un-stamp on container swap / unmount so no stale attribute survives.
+  useEffect(() => clearEmphasis, [applyEmphasis, clearEmphasis]);
+
+  const setHoveredThread = useCallback(
+    (threadId: string | null) => {
+      if (hoverRef.current.threadId === threadId) return;
+      hoverRef.current = { ...hoverRef.current, threadId };
+      applyEmphasis();
+    },
+    [applyEmphasis],
+  );
+  const setHoveredBlock = useCallback(
+    (blockId: string | null) => {
+      if (hoverRef.current.blockId === blockId) return;
+      hoverRef.current = { ...hoverRef.current, blockId };
+      applyEmphasis();
+    },
+    [applyEmphasis],
+  );
 
   // Always-current threads for the delegated-DOM handlers. The inline-highlight
   // spans are (re)built imperatively by InlineHighlightLayer's MutationObserver
@@ -109,52 +200,12 @@ export function CommentsLayer({
   // tick — so a click landing in that gap must NOT read a stale `threads` from a
   // captured closure (it would filter to zero ids and silently no-op the open).
   // Reading through a ref keeps openBlock stable AND correct regardless of timing.
-  // Threads with locally-deleted comments removed: drop a whole thread when its
-  // root is deleted; drop individual replies otherwise. This is the single view
-  // model the overlay (underlines, badges, popover) renders from.
-  const visibleThreads = useMemo<CommentThread[]>(() => {
-    if (deletedIds.size === 0) return threads;
-    return threads
-      .filter((t) => !deletedIds.has(t.root.id))
-      .map((t) =>
-        t.replies.some((r) => deletedIds.has(r.id))
-          ? { ...t, replies: t.replies.filter((r) => !deletedIds.has(r.id)) }
-          : t,
-      );
-  }, [threads, deletedIds]);
-
-  const handleDelete = useCallback(
-    async (commentId: string) => {
-      if (removeComment) {
-        await removeComment(commentId);
-        return;
-      }
-      // Optimistically hide, then delete. The server broadcast triggers the
-      // upstream refetch, which reconciles `threads` and prunes the id above.
-      setDeletedIds((prev) => {
-        const next = new Set(prev);
-        next.add(commentId);
-        return next;
-      });
-      try {
-        await deleteComment(slug, commentId);
-      } catch (err) {
-        // Roll back the optimistic hide on failure.
-        setDeletedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(commentId);
-          return next;
-        });
-        throw err;
-      }
-    },
-    [removeComment, slug],
-  );
-
-  const threadsRef = useRef(visibleThreads);
+  // Deletes need no local shadow list: removeComment (useComments) drops the row
+  // optimistically, so the `threads` prop itself updates on the very click.
+  const threadsRef = useRef(threads);
   useEffect(() => {
-    threadsRef.current = visibleThreads;
-  }, [visibleThreads]);
+    threadsRef.current = threads;
+  }, [threads]);
 
   const closeSelection = useCallback(() => {
     setSelection(null);
@@ -179,7 +230,7 @@ export function CommentsLayer({
         width: r.width,
         height: r.height,
       }));
-      setSelection({ rect, anchor, rects });
+      setSelection({ rect, anchor, rects, source: "pointer" });
       setActive(null);
     };
 
@@ -235,6 +286,91 @@ export function CommentsLayer({
     };
   }, [container, isTouch]);
 
+  // Keyboard comment creation (B1, WCAG 2.1.1): open the composer anchored to a
+  // whole block — no pointer selection involved. The anchor quotes the block's
+  // leading text (buildBlockAnchor), and the persistent highlight overlay paints
+  // exactly the anchored range so the user sees what the comment will attach to.
+  const openBlockComposer = useCallback(
+    (block: HTMLElement) => {
+      if (!container) return;
+      const anchor = buildBlockAnchor(block);
+      if (!anchor) return; // no text to anchor to (e.g. an <hr>)
+      const range = rangeFromOffsets(block, 0, anchor.quote.length);
+      const rect = range.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const rects = Array.from(range.getClientRects()).map((r) => ({
+        top: r.top - containerRect.top + container.scrollTop,
+        left: r.left - containerRect.left + container.scrollLeft,
+        width: r.width,
+        height: r.height,
+      }));
+      setActive(null);
+      setSelection({ rect, anchor, rects, source: "keyboard" });
+    },
+    [container],
+  );
+
+  // Focus tracking for the keyboard affordance (B1). Blocks are the elements
+  // whose data-block-id sits on the block itself — inline highlight spans also
+  // carry data-block-id, so they are excluded explicitly. Both the affordance
+  // and the hotkey are gated on :focus-visible: a pointer CLICK also focuses a
+  // tabindex block, but pointer users comment via text selection — without the
+  // gate every click would flash the pill, and typing "c" after a click would
+  // hijack the open composer's anchor. The affordance stays visible while focus
+  // rests on the block OR moves onto the affordance button; anything else hides
+  // it (a focus move onto another block re-shows it there).
+  useEffect(() => {
+    if (!container) return;
+
+    const BLOCK_ONLY = "[data-block-id]:not(.md-comment-highlight)";
+
+    const keyboardFocusedBlockOf = (target: EventTarget | null): HTMLElement | null =>
+      target instanceof HTMLElement &&
+      target.matches(BLOCK_ONLY) &&
+      target.matches(":focus-visible")
+        ? target
+        : null;
+
+    const onFocusIn = (e: FocusEvent) => {
+      const block = keyboardFocusedBlockOf(e.target);
+      if (!block || (block.textContent ?? "").trim().length === 0) return;
+      const blockId = block.getAttribute("data-block-id");
+      if (blockId === null) return;
+      const containerRect = container.getBoundingClientRect();
+      const top =
+        block.getBoundingClientRect().top - containerRect.top + container.scrollTop;
+      setFocusedBlock({ blockId, top });
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget;
+      if (next instanceof HTMLElement) {
+        // Moving onto the affordance keeps it; moving onto another block lets
+        // that block's focusin replace it in the same tick.
+        if (affordanceRef.current?.contains(next) || next.matches(BLOCK_ONLY)) return;
+      }
+      setFocusedBlock(null);
+    };
+    // The documented hotkey: C (or Enter) on a keyboard-focused block opens the
+    // composer anchored to that whole block.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "c" && e.key !== "C" && e.key !== "Enter") return;
+      const block = keyboardFocusedBlockOf(e.target);
+      if (!block) return;
+      e.preventDefault();
+      openBlockComposer(block);
+    };
+
+    container.addEventListener("focusin", onFocusIn);
+    container.addEventListener("focusout", onFocusOut);
+    container.addEventListener("keydown", onKeyDown);
+    return () => {
+      container.removeEventListener("focusin", onFocusIn);
+      container.removeEventListener("focusout", onFocusOut);
+      container.removeEventListener("keydown", onKeyDown);
+    };
+  }, [container, openBlockComposer]);
+
   const openBlock = useCallback((blockId: string, rect: DOMRect) => {
     const ids = threadsRef.current
       .filter((t) => t.root.anchor.blockId === blockId)
@@ -289,10 +425,10 @@ export function CommentsLayer({
     // that thread's sentence. The block-wide hint is reserved for the badge.
     const onOver = (e: Event) => {
       const id = threadIdOf(e.target);
-      if (id) setHoveredThreadId(id);
+      if (id) setHoveredThread(id);
     };
     const onOut = (e: Event) => {
-      if (threadIdOf(e.target)) setHoveredThreadId(null);
+      if (threadIdOf(e.target)) setHoveredThread(null);
     };
     // Resolve a usable anchor rect for the block. The clicked span may have been
     // swapped out by InlineHighlightLayer's strip+rebuild between mousedown and
@@ -336,10 +472,10 @@ export function CommentsLayer({
     };
     const onFocusIn = (e: Event) => {
       const id = threadIdOf(e.target);
-      if (id) setHoveredThreadId(id);
+      if (id) setHoveredThread(id);
     };
     const onFocusOut = (e: Event) => {
-      if (threadIdOf(e.target)) setHoveredThreadId(null);
+      if (threadIdOf(e.target)) setHoveredThread(null);
     };
 
     container.addEventListener("mouseover", onOver);
@@ -356,41 +492,53 @@ export function CommentsLayer({
       container.removeEventListener("focusin", onFocusIn);
       container.removeEventListener("focusout", onFocusOut);
     };
-  }, [container, openThread]);
+  }, [container, openThread, setHoveredThread]);
 
-  // Emphasise the matching inline underline(s) by stamping data-emphasized so the
-  // CSS coupling lights them. Thread-precise FIRST: when an underline is hovered,
-  // only that thread's sentence lights. Only when no thread is hovered do we fall
-  // back to the badge's block hint, lighting every underline on the block —
-  // keeping single-thread blocks identical (block == thread there).
-  useEffect(() => {
-    if (!container) return;
-    const selector = hoveredThreadId
-      ? `.md-comment-highlight[data-thread-id="${cssEscape(hoveredThreadId)}"]`
-      : hoveredBlockId
-        ? `.md-comment-highlight[data-block-id="${cssEscape(hoveredBlockId)}"]`
-        : null;
-    if (!selector) return;
-    const spans = container.querySelectorAll<HTMLElement>(selector);
-    spans.forEach((s) => s.setAttribute("data-emphasized", "true"));
-    return () => {
-      spans.forEach((s) => s.removeAttribute("data-emphasized"));
-    };
-    // `visibleThreads` is a dep so the emphasis re-applies after the inline-highlight
-    // layer rebuilds its spans (e.g. an optimistic comment reconciling with its server
-    // row while the badge is hovered) — child rebuild runs before this parent effect,
-    // so re-querying here re-stamps the fresh span instead of leaving it un-emphasised.
-  }, [container, hoveredThreadId, hoveredBlockId, visibleThreads]);
-
-  const activeThreads: CommentThread[] = useMemo(() => {
+  const activeThreads: CommentThreadDTO[] = useMemo(() => {
     if (!active) return [];
     const set = new Set(active.threadIds);
-    return visibleThreads.filter((t) => set.has(t.root.id));
-  }, [active, visibleThreads]);
+    return threads.filter((t) => set.has(t.root.id));
+  }, [active, threads]);
+
+  // Live anchor rect for the open ThreadPopover (audit 3.11): resolve the anchor
+  // element's CURRENT position on every Floating UI measure so the popover tracks
+  // its text through scrolls instead of staying pinned at the click-time rect.
+  // Single thread → that thread's own highlight span; block overview → the block's
+  // margin badge (what was clicked); fallbacks mirror anchorRectFor. Returning
+  // null (element gone, e.g. orphans or mid-rebuild) falls back to the frozen
+  // click-time rect inside ThreadPopover.
+  const activeLiveRect = useCallback((): DOMRect | null => {
+    if (!active || !container) return null;
+    if (active.threadIds.length === 1) {
+      const span = container.querySelector<HTMLElement>(
+        `.md-comment-highlight[data-thread-id="${cssEscape(active.threadIds[0]!)}"]`,
+      );
+      if (span) return span.getBoundingClientRect();
+    }
+    if (active.blockId !== "__orphans__") {
+      const badge = container.querySelector<HTMLElement>(
+        `[data-badge-block-id="${cssEscape(active.blockId)}"]`,
+      );
+      if (badge) return badge.getBoundingClientRect();
+      const block = container.querySelector<HTMLElement>(
+        `[data-block-id="${cssEscape(active.blockId)}"]`,
+      );
+      if (block) return block.getBoundingClientRect();
+    }
+    return null;
+  }, [active, container]);
 
   return (
     <>
-      <InlineHighlightLayer container={container} threads={visibleThreads} />
+      {/* onDecorated re-stamps the hover emphasis after ANY span rebuild
+          (audit invariant L5-2) — including MutationObserver-driven rebuilds
+          that happen entirely outside React. */}
+      <InlineHighlightLayer
+        container={container}
+        threads={threads}
+        cache={relocationCache}
+        onDecorated={applyEmphasis}
+      />
 
       {/* Persistent highlight over the text being commented on, so the selection
           stays visible after the composer's textarea steals native focus. */}
@@ -414,13 +562,42 @@ export function CommentsLayer({
           ))
         : null}
 
+      {/* Keyboard affordance (B1): visible while a block holds focus. Rendered
+          after the blocks in DOM order, so keyboard users act via the documented
+          C/Enter hotkey (shown on the pill); pointer users can click it. */}
+      {focusedBlock ? (
+        <button
+          ref={affordanceRef}
+          type="button"
+          aria-keyshortcuts="c"
+          onClick={() => {
+            if (!container) return;
+            const block = container.querySelector<HTMLElement>(
+              `[data-block-id="${cssEscape(focusedBlock.blockId)}"]:not(.md-comment-highlight)`,
+            );
+            if (block) openBlockComposer(block);
+          }}
+          className="absolute left-0 z-20 inline-flex -translate-y-[calc(100%+4px)] items-center gap-1.5 rounded-full border border-border bg-elevated px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background motion-safe:animate-in motion-safe:fade-in-0"
+          style={{ top: focusedBlock.top }}
+        >
+          <MessageSquarePlus aria-hidden className="size-3.5" />
+          Comment on this block
+          <kbd
+            aria-hidden
+            className="rounded border border-border bg-secondary px-1 font-mono text-[0.65rem] leading-4 text-muted-foreground"
+          >
+            C
+          </kbd>
+        </button>
+      ) : null}
+
       <BadgeLayer
         container={container}
-        threads={visibleThreads}
+        threads={threads}
+        cache={relocationCache}
         selectedBlockId={active?.blockId ?? null}
-        hoveredBlockId={hoveredBlockId}
         onOpenBlock={openBlock}
-        onHoverBlock={setHoveredBlockId}
+        onHoverBlock={setHoveredBlock}
         onOpenOrphans={(threadIds, rect) => {
           if (threadIds.length === 0) return;
           // Orphaned threads have no block to underline; open them as a synthetic
@@ -434,12 +611,23 @@ export function CommentsLayer({
         open={selection !== null}
         rect={selection?.rect ?? null}
         anchor={selection?.anchor ?? null}
+        focusOnOpen={isTouch || selection?.source === "keyboard"}
         onClose={closeSelection}
         onSubmitText={async (anchor, body) => {
           await addComment(anchor, body, currentUserName);
         }}
         onSubmitEmoji={async (anchor, emoji) => {
-          await addComment(anchor, emoji, currentUserName);
+          const id = await addComment(anchor, emoji, currentUserName);
+          // An emoji tap posts a FULL comment in one gesture — give a mis-tap a
+          // ~5s Undo window (audit m7). `id` is null when the POST failed (the
+          // failure toast with Retry has already surfaced in that case).
+          if (id) {
+            toast({
+              message: `${emoji} posted`,
+              durationMs: 5000,
+              action: { label: "Undo", onClick: () => void removeComment(id) },
+            });
+          }
         }}
       />
 
@@ -447,12 +635,13 @@ export function CommentsLayer({
         open={active !== null}
         threads={activeThreads}
         rect={active?.rect ?? null}
+        getLiveRect={activeLiveRect}
         role={role}
         onClose={() => setActive(null)}
         onReply={addReply}
         onReact={react}
         onSetStatus={setStatus}
-        onDelete={handleDelete}
+        onDelete={removeComment}
       />
     </>
   );

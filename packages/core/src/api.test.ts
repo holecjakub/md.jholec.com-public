@@ -44,6 +44,35 @@ describe("createApi", () => {
     await expect(api.pullDocument("abc")).rejects.toMatchObject({ status: 403 });
   });
 
+  it("throws ApiError with status (not SyntaxError) on a non-JSON error body", async () => {
+    // A proxy/CDN outage typically answers with an HTML error page.
+    const fetchMock = vi.fn<FetchFn>(
+      async () =>
+        new Response("<html><body>502 Bad Gateway</body></html>", {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    const api = createApi(createClient({ baseUrl: "https://x/api", token: "pat_1" }), fetchMock);
+    await expect(api.pullDocument("abc")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 502,
+      message: "Request failed (502)",
+    });
+  });
+
+  it("throws ApiError (not SyntaxError) on a 2xx response with a malformed JSON body", async () => {
+    const fetchMock = vi.fn<FetchFn>(
+      async () => new Response("not-json", { status: 200, headers: { "content-type": "text/plain" } }),
+    );
+    const api = createApi(createClient({ baseUrl: "https://x/api", token: "pat_1" }), fetchMock);
+    await expect(api.pullDocument("abc")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 200,
+      message: "Malformed JSON in response body",
+    });
+  });
+
   it("unlockEarlyAccess POSTs the password and returns the grant cookie value", async () => {
     const fetchMock = vi.fn<FetchFn>(
       async () =>
@@ -99,13 +128,32 @@ describe("createApi", () => {
   });
 
   it("mintAgentLink mints an export PAT and builds the site-origin agent URL", async () => {
-    const fetchMock = vi.fn<FetchFn>(async () => jsonResponse({ token: "pat_export9" }, 201));
+    const fetchMock = vi.fn<FetchFn>(async () =>
+      jsonResponse({ token: "pat_export9", expiresAt: "2026-08-01T00:00:00Z" }, 201),
+    );
     const api = createApi(createClient({ baseUrl: "https://x/api", token: "pat_owner" }), fetchMock);
     const res = await api.mintAgentLink("abc");
-    expect(res).toEqual({ token: "pat_export9", url: "https://x/d/abc/agent/pat_export9" });
+    expect(res).toEqual({
+      token: "pat_export9",
+      url: "https://x/d/abc/agent/pat_export9",
+      expiresAt: "2026-08-01T00:00:00Z",
+    });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://x/api/d/abc/pat");
     expect(JSON.parse(init?.body as string)).toMatchObject({ kind: "export" });
+  });
+
+  it("revokeTokens and revokeInvites DELETE the credential routes and return counts", async () => {
+    const fetchMock = vi.fn<FetchFn>(async () => jsonResponse({ revoked: 2 }));
+    const api = createApi(createClient({ baseUrl: "https://x/api", token: "pat_owner" }), fetchMock);
+    expect(await api.revokeTokens("abc")).toEqual({ revoked: 2 });
+    expect(await api.revokeInvites("abc")).toEqual({ revoked: 2 });
+    const [patUrl, patInit] = fetchMock.mock.calls[0]!;
+    expect(patUrl).toBe("https://x/api/d/abc/pat");
+    expect(patInit?.method).toBe("DELETE");
+    const [shareUrl, shareInit] = fetchMock.mock.calls[1]!;
+    expect(shareUrl).toBe("https://x/api/d/abc/share");
+    expect(shareInit?.method).toBe("DELETE");
   });
 
   it("setCommentStatus PATCHes the comment status and returns id + status", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import type { CommentThread } from "@/lib/comments-api";
+import { memo, useMemo, useRef, useState } from "react";
+import type { CommentThreadDTO } from "@/lib/comments-api";
 import type { Role } from "@/lib/document-api";
 import { cn } from "@/lib/utils";
 import { ThreadPopover } from "@/components/comments/ThreadPopover";
@@ -9,7 +9,7 @@ import { CopyButton } from "./CopyButton";
 
 interface CodeCommentHandlers {
   role: Role;
-  threads: CommentThread[];
+  threads: CommentThreadDTO[];
   onReply: (commentId: string, body: string) => Promise<void>;
   onReact: (commentId: string, emoji: string) => Promise<void>;
   onSetStatus: (commentId: string, status: "open" | "resolved") => Promise<void>;
@@ -28,7 +28,7 @@ interface Segment {
  * highlights. Uses prefix+quote to disambiguate repeated text, falls back to the
  * bare quote, and drops overlaps (first match wins) so segments never collide.
  */
-function buildSegments(content: string, threads: CommentThread[]): Segment[] {
+function buildSegments(content: string, threads: CommentThreadDTO[]): Segment[] {
   const ranges: { start: number; end: number; threadId: string; resolved: boolean }[] = [];
   for (const t of threads) {
     const { quote, prefix } = t.root.anchor;
@@ -67,15 +67,26 @@ function buildSegments(content: string, threads: CommentThread[]): Segment[] {
  * handlers are supplied, anchored quotes are highlighted inline and open the same
  * thread popover used in the preview — so comments are visible and actionable in
  * the Code view too, not only in Preview.
+ *
+ * Memoized: `content` is a stable string and the caller memoizes `comments`
+ * (DocumentView), so the potentially huge <pre> of raw source is not
+ * re-reconciled on every unrelated comment/realtime event — only when the
+ * threads (or content) actually change.
  */
-export function CodeView({
+export const CodeView = memo(function CodeView({
   content,
   comments,
 }: {
   content: string;
   comments?: CodeCommentHandlers;
 }) {
-  const [active, setActive] = useState<{ threadId: string; rect: DOMRect } | null>(null);
+  // Keep the clicked highlight ELEMENT alongside its click-time rect so the
+  // popover can read the anchor's live position on every measure (audit 3.11 —
+  // a frozen rect detaches the popover from its text the moment the page
+  // scrolls). The rect stays as the fallback if the element is remounted away.
+  const [active, setActive] = useState<
+    { threadId: string; el: HTMLElement; rect: DOMRect } | null
+  >(null);
 
   const segments = useMemo(
     () => (comments ? buildSegments(content, comments.threads) : [{ text: content }]),
@@ -107,7 +118,13 @@ export function CodeView({
                     key={`${i}-${s.threadId}`}
                     text={s.text}
                     resolved={s.resolved ?? false}
-                    onOpen={(rect) => setActive({ threadId: s.threadId!, rect })}
+                    onOpen={(el) =>
+                      setActive({
+                        threadId: s.threadId!,
+                        el,
+                        rect: el.getBoundingClientRect(),
+                      })
+                    }
                   />
                 ) : (
                   <span key={i}>{s.text}</span>
@@ -122,6 +139,9 @@ export function CodeView({
           open={active !== null}
           threads={activeThreads}
           rect={active?.rect ?? null}
+          getLiveRect={() =>
+            active?.el.isConnected ? active.el.getBoundingClientRect() : null
+          }
           role={comments.role}
           onClose={() => setActive(null)}
           onReply={comments.onReply}
@@ -132,7 +152,7 @@ export function CodeView({
       ) : null}
     </div>
   );
-}
+});
 
 CodeView.displayName = "CodeView";
 
@@ -144,7 +164,7 @@ function CodeHighlight({
 }: {
   text: string;
   resolved: boolean;
-  onOpen: (rect: DOMRect) => void;
+  onOpen: (el: HTMLButtonElement) => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   return (
@@ -154,8 +174,7 @@ function CodeHighlight({
       data-code-comment
       aria-label={`Open comment on "${text.slice(0, 40)}"`}
       onClick={() => {
-        const rect = ref.current?.getBoundingClientRect();
-        if (rect) onOpen(rect);
+        if (ref.current) onOpen(ref.current);
       }}
       className={cn(
         "md-comment-highlight cursor-pointer bg-transparent p-0 font-mono text-left align-baseline",

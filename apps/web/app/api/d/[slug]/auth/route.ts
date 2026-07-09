@@ -15,11 +15,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (!parsed.success) return error(400, "Invalid body");
 
   const db = admin();
-  const { data: doc } = await db
+  const { data: doc, error: docErr } = await db
     .from("documents")
     .select("id, password_hash")
     .eq("slug", slug)
     .maybeSingle();
+  // A DB error is an outage, not a missing row — don't mask it as 404 (audit 3.5).
+  if (docErr) return error(500, "Failed to load document");
   if (!doc) return error(404, "Document not found");
 
   if (await isRateLimited(doc.id, clientIp(req))) return error(429, "Too many attempts");

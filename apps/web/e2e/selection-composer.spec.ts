@@ -259,6 +259,79 @@ test("submitting a selected-text emoji closes the composer before the network fi
   await page.unroute(`**/api/d/${doc.slug}/comments`);
 });
 
+test("an emoji quick-react can be undone from the toast", async ({ page }) => {
+  const doc = await createDoc(page);
+  await redeem(page, doc.ownerPath, "Uma Undo");
+
+  await openComposerFromSelection(page);
+  await composer(page).getByRole("button", { name: "Looks good" }).click();
+  await expect(composer(page)).toBeHidden();
+
+  // The one-tap emoji comment landed (badge appears) …
+  const badge = page.locator('button[aria-label*="comment thread"]');
+  await expect(badge.first()).toBeVisible();
+
+  // … and a transient Undo toast makes the mis-tap recoverable (audit m7).
+  const toast = page.getByRole("status").filter({ hasText: "posted" });
+  await expect(toast).toBeVisible();
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(badge).toHaveCount(0);
+});
+
+test("an unsent draft survives an outside press; Esc explicitly discards it", async ({
+  page,
+}) => {
+  test.skip(
+    (page.viewportSize()?.width ?? 0) < 768,
+    "draft-preserving dismissal is exercised on the desktop project",
+  );
+
+  const doc = await createDoc(page);
+  await redeem(page, doc.ownerPath, "Drew Drafter");
+
+  await openComposerFromSelection(page);
+  const textarea = composer(page).getByRole("textbox", { name: "Add a comment…" });
+  await textarea.fill("Precious unsent draft");
+
+  // An outside press must NOT destroy the draft (audit M1) — the composer stays
+  // open with the text intact.
+  await page.mouse.click(10, 10);
+  await expect(composer(page)).toBeVisible();
+  await expect(textarea).toHaveValue("Precious unsent draft");
+
+  // Esc is the explicit discard.
+  await page.keyboard.press("Escape");
+  await expect(composer(page)).toBeHidden();
+});
+
+test("fine-pointer selection surfaces the composer without stealing focus; typing focuses it", async ({
+  page,
+}) => {
+  test.skip(
+    (page.viewportSize()?.width ?? 0) < 768,
+    "no-focus-steal reveal applies to fine pointers only",
+  );
+
+  const doc = await createDoc(page);
+  await redeem(page, doc.ownerPath, "Cody Copier");
+
+  await openComposerFromSelection(page);
+  const textarea = composer(page).getByRole("textbox", { name: "Add a comment…" });
+
+  // The composer surfaced but did NOT steal focus (audit M3): the native
+  // selection is still live, so the ordinary select-to-copy gesture works.
+  await expect(textarea).not.toBeFocused();
+  const selectedLength = await page.evaluate(
+    () => window.getSelection()?.toString().length ?? 0,
+  );
+  expect(selectedLength).toBeGreaterThan(0);
+
+  // The first printable keystroke focuses the field and lands in it.
+  await page.keyboard.press("h");
+  await expect(textarea).toBeFocused();
+  await expect(textarea).toHaveValue("h");
+});
+
 test("a failed comment post shows an error toast with Retry; the optimistic comment rolls back and retry succeeds", async ({
   page,
 }) => {

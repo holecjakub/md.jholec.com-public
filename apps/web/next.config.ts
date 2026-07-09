@@ -5,7 +5,11 @@ import type { NextConfig } from "next";
 // /d/[slug] page previously shipped none. CSP is a defense-in-depth backstop —
 // markdown is sanitized server-side (rehype-sanitize last, no rehype-raw, no
 // dangerouslySetInnerHTML), so there is no live XSS path today. 'unsafe-inline'
-// is required for Next's injected runtime/styles; tighten to nonces if needed.
+// is required for Next's injected runtime/styles.
+// TODO(security L8): replace 'unsafe-inline' in script-src with per-request nonces
+// (needs middleware to mint the nonce and stamp the header; static headers() here
+// cannot). 'unsafe-eval' is dev-only: Next/Turbopack HMR needs eval, production
+// bundles do not, so prod CSP omits it.
 // The browser talks to Supabase REST + Realtime directly. In prod that's the
 // *.supabase.co host; locally it's 127.0.0.1:54321. Derive the exact origin (and
 // its ws:// variant) from the public env so the CSP allows it in every env.
@@ -23,7 +27,7 @@ const CSP = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   `connect-src 'self' https://*.supabase.co wss://*.supabase.co${supabaseConnect ? ` ${supabaseConnect}` : ""}`,
   "form-action 'self'",
 ].join("; ");

@@ -1,9 +1,9 @@
-import type { CommentThread } from "@/lib/comments-api";
+import type { CommentThreadDTO } from "@/lib/comments-api";
 
 /** A block's worth of comment threads, plus derived overview data. */
 export interface BlockGroup {
   blockId: string;
-  threads: CommentThread[];
+  threads: CommentThreadDTO[];
   /** Unique participant display names that authored anything on this block. */
   participants: string[];
   /** Distinct emoji used across all threads/replies on this block, with totals. */
@@ -21,8 +21,8 @@ export interface BlockGroup {
  * Orphaned anchors are NOT excluded here (the caller decides placement); a block
  * id always exists on every thread's anchor.
  */
-export function groupThreadsByBlock(threads: CommentThread[]): BlockGroup[] {
-  const byBlock = new Map<string, CommentThread[]>();
+export function groupThreadsByBlock(threads: CommentThreadDTO[]): BlockGroup[] {
+  const byBlock = new Map<string, CommentThreadDTO[]>();
   for (const thread of threads) {
     const id = thread.root.anchor.blockId;
     const list = byBlock.get(id);

@@ -38,9 +38,10 @@ export async function setEarlyAccessCookie(): Promise<void> {
   const jar = await cookies();
   jar.set(COOKIE, token, {
     httpOnly: true,
-    // Secure cookies are dropped by browsers over plain http (localhost dev/test).
-    // Enable only in production (https) — mirrors lib/auth/cookies.ts.
-    secure: process.env.NODE_ENV === "production",
+    // Enable in production EXCEPT over an explicit http:// origin (CI e2e serves a
+    // prod build over http://localhost; WebKit refuses Secure cookies there).
+    // Never weakens real prod (https://). Mirrors lib/auth/cookies.ts.
+    secure: process.env.NODE_ENV === "production" && !env.baseUrl.startsWith("http://"),
     sameSite: "lax",
     path: "/",
     maxAge: ttlSeconds(),

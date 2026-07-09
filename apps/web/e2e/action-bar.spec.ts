@@ -284,6 +284,115 @@ test.describe("ActionBar — floating right pill", () => {
     expect(copied).not.toContain("<html");
   });
 
+  test("desktop: owner sees the Revoke reviewer link control; a reviewer does not", async ({
+    browser,
+    page,
+  }) => {
+    test.skip(!isDesktop(page), "owner revoke is a desktop pill control");
+    const doc = await createDocument(page);
+
+    // Owner — the destructive revoke control is present.
+    await redeemAndOpen(page, doc.ownerUrl, "Owen Owner");
+    const ownerPill = page.getByRole("navigation", { name: "Document actions" });
+    await expect(
+      ownerPill.getByRole("button", { name: "Revoke & regenerate reviewer link" }),
+    ).toBeVisible();
+
+    // Reviewer (separate context) does NOT see the revoke control.
+    const ctx = await browser.newContext();
+    const rp = await ctx.newPage();
+    try {
+      await redeemAndOpen(rp, doc.inviteUrl, "Rhea Reviewer");
+      const rPill = rp.getByRole("navigation", { name: "Document actions" });
+      await expect(rPill).toBeVisible();
+      await expect(
+        rPill.getByRole("button", { name: "Revoke & regenerate reviewer link" }),
+      ).toHaveCount(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("desktop: revoke confirm runs revoke → regenerate → copy, and the old reviewer link stops redeeming", async ({
+    browser,
+    page,
+  }) => {
+    test.skip(!isDesktop(page), "desktop-only revoke control");
+    const doc = await createDocument(page);
+    // The reusable reviewer token minted at seed time — this is what revoke kills.
+    const oldToken = doc.inviteUrl.split("#t=")[1] ?? "";
+    expect(oldToken, "seed produced a reviewer token").toBeTruthy();
+
+    await redeemAndOpen(page, doc.ownerUrl, "Rita Revoker");
+
+    // Capture what gets written to the clipboard.
+    await page.evaluate(() => {
+      (window as unknown as { __copied: string }).__copied = "";
+      navigator.clipboard.writeText = async (t: string) => {
+        (window as unknown as { __copied: string }).__copied = t;
+      };
+    });
+
+    const ownerPill = page.getByRole("navigation", { name: "Document actions" });
+    await ownerPill
+      .getByRole("button", { name: "Revoke & regenerate reviewer link" })
+      .click();
+
+    // Confirm-before-destroy popover with the spelled-out consequence.
+    await expect(page.getByText("Revoke reviewer link?")).toBeVisible();
+    await expect(
+      page.getByText("Everyone using the current reviewer link loses access immediately"),
+    ).toBeVisible();
+
+    // Run the destructive action (exact:true so this doesn't also match the
+    // trigger's longer "Revoke & regenerate reviewer link" accessible name).
+    await page.getByRole("button", { name: "Revoke & regenerate", exact: true }).click();
+
+    // A fresh reviewer link was minted and copied to the clipboard.
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __copied: string }).__copied))
+      .toContain("/d/");
+    const copied = await page.evaluate(
+      () => (window as unknown as { __copied: string }).__copied,
+    );
+    const newToken = copied.split("#t=")[1] ?? "";
+    expect(newToken, "a new reviewer token was generated").toBeTruthy();
+    expect(newToken).not.toBe(oldToken);
+
+    // The OLD reviewer link is genuinely dead: a fresh visitor can no longer
+    // redeem it (a neutral context avoids clobbering the owner page session).
+    const ctx = await browser.newContext();
+    try {
+      const res = await ctx.request.post(`/api/d/${doc.slug}/redeem`, {
+        data: { token: oldToken, name: "Late Reviewer" },
+      });
+      expect(res.status(), await res.text()).toBe(401);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("desktop: owner open-thread count badge hides at zero and reflects open threads", async ({
+    page,
+  }) => {
+    test.skip(!isDesktop(page), "owner thread-count badge is a desktop pill control");
+    const doc = await createDocument(page);
+    await redeemAndOpen(page, doc.ownerUrl, "Tina Threads");
+
+    const ownerPill = page.getByRole("navigation", { name: "Document actions" });
+    // At zero open threads the badge is absent (no meaningless "0" chip).
+    await expect(ownerPill.getByRole("status", { name: /open thread/ })).toHaveCount(0);
+
+    // Seed one comment → exactly one open thread → the badge appears and reads it.
+    await seedComment(page, doc.slug, ANCHOR_TEXT);
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Action Bar Spec Doc", level: 1 }),
+    ).toBeVisible();
+
+    await expect(ownerPill.getByRole("status", { name: "1 open thread" })).toBeVisible();
+  });
+
   test("desktop: owner toolbar axe — no serious/critical violations", async ({ page }) => {
     test.skip(!isDesktop(page), "desktop-only axe check");
     const doc = await createDocument(page);
@@ -435,6 +544,53 @@ test.describe("ActionBar — mobile FAB cluster", () => {
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { __copied: string }).__copied))
       .toContain("/d/");
+  });
+
+  test("mobile: owner reaches Revoke link + open-thread count in the cluster; revoke copies a fresh link", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "mobile-only cluster");
+    const doc = await createDocument(page);
+    const oldToken = doc.inviteUrl.split("#t=")[1] ?? "";
+    await redeemAndOpen(page, doc.ownerUrl, "Morgan Mobile");
+
+    // Seed one comment so the open-thread count status renders in the cluster.
+    await seedComment(page, doc.slug, ANCHOR_TEXT);
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Action Bar Spec Doc", level: 1 }),
+    ).toBeVisible();
+
+    const fab = page.getByRole("button", { name: "Document actions" });
+    await fab.tap();
+    await expect(fab).toHaveAttribute("aria-expanded", "true");
+
+    // m3: the open-thread count status is present and reflects the one open thread.
+    await expect(page.getByRole("status", { name: "1 open thread" })).toBeVisible();
+
+    // M5: capture the clipboard, open the Revoke confirm, and run it.
+    await page.evaluate(() => {
+      (window as unknown as { __copied: string }).__copied = "";
+      navigator.clipboard.writeText = async (t: string) => {
+        (window as unknown as { __copied: string }).__copied = t;
+      };
+    });
+    await page
+      .getByRole("button", { name: "Revoke & regenerate reviewer link" })
+      .tap();
+    await expect(page.getByText("Revoke reviewer link?")).toBeVisible();
+    await page.getByRole("button", { name: "Revoke & regenerate", exact: true }).tap();
+
+    // A fresh reviewer link (different token) was minted and copied.
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __copied: string }).__copied))
+      .toContain("/d/");
+    const copied = await page.evaluate(
+      () => (window as unknown as { __copied: string }).__copied,
+    );
+    const newToken = copied.split("#t=")[1] ?? "";
+    expect(newToken, "a new reviewer token was generated").toBeTruthy();
+    expect(newToken).not.toBe(oldToken);
   });
 
   test("mobile: cluster collapses and does not cover content at rest", async ({ page }) => {

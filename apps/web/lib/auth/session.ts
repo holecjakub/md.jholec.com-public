@@ -11,7 +11,16 @@ export interface SessionClaims {
 function secret(): Uint8Array {
   const value = process.env.SESSION_SIGNING_SECRET;
   if (!value) throw new Error("Missing required env var: SESSION_SIGNING_SECRET");
-  return new TextEncoder().encode(value);
+  const bytes = new TextEncoder().encode(value);
+  // HS256 security rests entirely on key entropy: RFC 7518 §3.2 requires a key at
+  // least as long as the hash output (32 bytes). A short secret makes every session
+  // token offline-bruteforceable, so refuse to sign/verify with one.
+  if (bytes.length < 32) {
+    throw new Error(
+      "SESSION_SIGNING_SECRET must be at least 32 bytes. Generate one with: openssl rand -base64 32",
+    );
+  }
+  return bytes;
 }
 
 function defaultTtlSeconds(): number {

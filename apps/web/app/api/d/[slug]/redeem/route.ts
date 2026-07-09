@@ -24,19 +24,39 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (!parsed.success) return error(400, "Invalid body");
 
   const db = admin();
-  const { data: doc } = await db.from("documents").select("id").eq("slug", slug).maybeSingle();
+  const { data: doc, error: docErr } = await db
+    .from("documents")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  // A DB error is an outage, not a missing row — don't mask it as 404/401 (audit 3.5).
+  if (docErr) return error(500, "Failed to load document");
   if (!doc) return error(404, "Document not found");
 
   const tokenHash = sha256hex(parsed.data.token);
-  const { data: row } = await db
+  const { data: row, error: rowErr } = await db
     .from("access_tokens")
     .select("id, document_id, kind, reusable, consumed_at, expires_at, revoked_at")
     .eq("token_hash", tokenHash)
     .maybeSingle();
+  if (rowErr) return error(500, "Failed to validate token");
   if (!row) return error(401, "Invalid token");
 
   const decision = evaluateAccessToken(row as AccessTokenRow, doc.id, new Date());
   if (!decision.ok) return error(401, "Invalid token");
+
+  // Consume single-use tokens atomically BEFORE minting any session. The conditional
+  // update (consumed_at IS NULL) acts as a compare-and-swap: two concurrent redeems race
+  // on the same row and only one gets a matching row back, so only one mints a session.
+  if (!row.reusable) {
+    const { data: consumed } = await db
+      .from("access_tokens")
+      .update({ consumed_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .is("consumed_at", null)
+      .select("id");
+    if (!consumed || consumed.length !== 1) return error(401, "Invalid token");
+  }
 
   const role = row.kind === "owner" ? "owner" : "reviewer";
   const { data: participant } = await db
@@ -45,10 +65,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
     .select("id")
     .single();
   if (!participant) return error(500, "Failed to create participant");
-
-  if (!row.reusable && row.consumed_at === null) {
-    await db.from("access_tokens").update({ consumed_at: new Date().toISOString() }).eq("id", row.id);
-  }
 
   await setSessionCookie({ doc: doc.id, pid: participant.id, role });
   const res = noStore(json({ participantId: participant.id, role }));

@@ -1,7 +1,23 @@
 {
   "name": "md-jholec",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@10.34.3",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.10": ">=8.5.10"
+    },
+    "onlyBuiltDependencies": [
+      "@node-rs/argon2",
+      "esbuild",
+      "sharp",
+      "supabase",
+      "unrs-resolver"
+    ]
+  },
   "scripts": {
     "dev": "pnpm --filter @md/web dev",
     "build": "pnpm -r build",

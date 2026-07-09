@@ -2,10 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import { seedDocument } from "./_helpers";
 
 /**
- * #29 — the document loader must stay up until the comments' INITIAL fetch
- * resolves, so the page is never revealed half-loaded (content first, then badges
- * popping in a beat later). We delay the comments GET and assert the loader holds
- * (and badges are absent) until it returns.
+ * Loading behavior. The initial comments ship EMBEDDED in the document payload
+ * (perf H1), so the document + its badges reveal together as soon as the doc
+ * arrives — there is no second sequential comments round trip and no
+ * overlay-until-comments phase. We hold the comments GET (only realtime/mutation
+ * refetches hit it now) and assert the badge still renders promptly.
  */
 
 const CONTENT = [
@@ -38,13 +39,13 @@ async function redeem(page: Page, path: string, name: string) {
   ).toBeVisible();
 }
 
-test("loader stays until comments finish loading (no half-loaded reveal)", async ({
+test("badges render from the embedded payload without a second comments round trip", async ({
   page,
 }) => {
   const doc = await createDoc(page);
   await redeem(page, doc.ownerPath, "Olivia Owner");
 
-  // Seed a comment so there is a badge to wait for once comments load.
+  // Seed a comment so there is a badge to wait for.
   const blockId = await page.evaluate((s) => {
     const el = Array.from(document.querySelectorAll("[data-block-id]")).find((b) =>
       (b.textContent ?? "").includes(s),
@@ -57,26 +58,25 @@ test("loader stays until comments finish loading (no half-loaded reveal)", async
   });
   expect(seed.status()).toBe(201);
 
-  // Delay only the comments GET so we can observe the loader holding.
+  // Hold any comments GET far beyond the assertion window. Only realtime/
+  // mutation refetches hit this endpoint now — the initial list is embedded in
+  // the document payload, so the badge must appear without waiting for it.
   await page.route("**/comments", async (route) => {
     if (route.request().method() === "GET") {
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 15_000));
     }
-    await route.continue();
+    await route.continue().catch(() => {});
   });
 
   await page.reload();
 
-  // While the comments GET is in flight, the loader overlay is up and NO badge
-  // has rendered yet (the doc is not revealed half-loaded).
-  await expect(page.getByText("Loading document…")).toBeVisible();
-  await expect(page.locator('button[aria-label*="comment thread"]')).toHaveCount(0);
-
-  // Once comments resolve, the loader clears and the badge appears together.
-  await expect(page.getByText("Loading document…")).toBeHidden({ timeout: 6000 });
+  // The badge renders together with the document, while the comments GET (if
+  // any fired) is still being held.
   await expect(
     page.locator('button[aria-label*="comment thread"]').first(),
-  ).toBeVisible({ timeout: 6000 });
+  ).toBeVisible({ timeout: 10_000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("reacting and posting do not error where haptics are unsupported (#31 graceful no-op)", async ({
@@ -119,20 +119,12 @@ test("reacting and posting do not error where haptics are unsupported (#31 grace
 test("loader stays pinned to the viewport center (no jump) — #36", async ({ page }) => {
   const doc = await createDoc(page);
   await redeem(page, doc.ownerPath, "Olivia Owner");
-  const blockId = await page.evaluate((s) => {
-    const el = Array.from(document.querySelectorAll("[data-block-id]")).find((b) =>
-      (b.textContent ?? "").includes(s),
-    );
-    return el?.getAttribute("data-block-id") ?? null;
-  }, QUOTE);
-  await page.request.post(`/api/d/${doc.slug}/comments`, {
-    data: { anchor: { quote: QUOTE, prefix: "", suffix: "", blockId }, body: "Root." },
-  });
 
-  // Hold the comments fetch so the in-document loader overlay is visible.
-  await page.route("**/comments", async (route) => {
-    if (route.request().method() === "GET") await new Promise((r) => setTimeout(r, 1500));
-    await route.continue();
+  // Hold the DOCUMENT fetch so the session-check loader is observable. (The
+  // comments no longer gate the reveal — they ship inside this same payload.)
+  await page.route(`**/api/d/${doc.slug}`, async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue().catch(() => {});
   });
   await page.reload();
 
@@ -147,4 +139,6 @@ test("loader stays pinned to the viewport center (no jump) — #36", async ({ pa
   const centerX = box!.x + box!.width / 2;
   expect(Math.abs(centerY - vp.height / 2)).toBeLessThanOrEqual(2);
   expect(Math.abs(centerX - vp.width / 2)).toBeLessThanOrEqual(2);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });

@@ -41,7 +41,18 @@ function selectionHighlightRect(): DOMRect | null {
  * style). Anchored via a Base UI Popover positioned against a virtual element
  * whose rect is the selection's bounding box. Submitting text posts a comment;
  * tapping an emoji posts a one-emoji comment (the documented selection-emoji
- * model). Dismisses on outside-click / Esc (Base UI dismissable layer).
+ * model).
+ *
+ * Dismissal is draft-aware (audit M1): with the field EMPTY, an outside press /
+ * Esc closes as before. With unsent content, outside interactions are ignored —
+ * only an explicit Esc (or Android back) discards, and a NEW text selection
+ * merely re-anchors the still-open composer with the draft intact.
+ *
+ * Focus is opt-in (audit M3): on fine pointers the composer surfaces WITHOUT
+ * stealing focus, so the native selection survives and select-to-COPY keeps
+ * working; the first printable keystroke (or a click into the field) focuses
+ * it. Touch and keyboard-created composers focus immediately (`focusOnOpen`) —
+ * a keyboard user has no pointer to click into the field with.
  *
  * Design (inspiration 01 + 03):
  * - rounded-2xl "unified field" — the popover frame IS the field, no inner border
@@ -64,6 +75,7 @@ export function SelectionComposer({
   open,
   rect,
   anchor,
+  focusOnOpen = false,
   onClose,
   onSubmitText,
   onSubmitEmoji,
@@ -71,6 +83,13 @@ export function SelectionComposer({
   open: boolean;
   rect: DOMRect | null;
   anchor: TextQuoteAnchor | null;
+  /**
+   * Focus the field as soon as the composer opens. True on touch (the keyboard
+   * dock depends on it) and for keyboard-created block comments; false for
+   * fine-pointer selections, where stealing focus would kill the native
+   * selection and hijack select-to-copy (audit M3).
+   */
+  focusOnOpen?: boolean;
   onClose: () => void;
   onSubmitText: (anchor: TextQuoteAnchor, body: string) => Promise<void>;
   onSubmitEmoji: (anchor: TextQuoteAnchor, emoji: string) => Promise<void>;
@@ -110,6 +129,36 @@ export function SelectionComposer({
   );
 
   const popupRef = useRef<HTMLDivElement>(null);
+  // Wraps the boxed input; used to reach CommentComposer's <textarea> without
+  // widening its API (same pattern as ThreadPopover's ReplyComposer).
+  const fieldBoxRef = useRef<HTMLDivElement>(null);
+
+  // Deferred-focus mode (audit M3): while the composer is open but deliberately
+  // unfocused (fine pointers), the FIRST printable keystroke focuses the field —
+  // focusing during keydown routes that very character into the textarea — and
+  // Esc stays an explicit discard even though focus never entered the popup.
+  useEffect(() => {
+    if (!open || focusOnOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        setIsEmpty(true);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.tagName === "TEXTAREA" || active.tagName === "INPUT" || active.isContentEditable)
+      ) {
+        return; // never hijack typing that already has a target
+      }
+      fieldBoxRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, focusOnOpen, onClose]);
 
   // When docked, the selected text may sit behind the dock/keyboard. Nudge the
   // page up so the highlighted line clears the composer's top edge. Best-effort:
@@ -144,11 +193,16 @@ export function SelectionComposer({
       />
       <PopoverPrimitive.Root
         open={open && anchor !== null && (keyboardOpen ? dockEl !== null : true)}
-        onOpenChange={(next) => {
-          if (!next) {
-            onClose();
-            setIsEmpty(true);
-          }
+        onOpenChange={(next, eventDetails) => {
+          if (next) return;
+          // Draft protection (audit M1): unsent content must never be destroyed
+          // by an accidental outside press / focus loss. With content present,
+          // only an EXPLICIT Esc discards — outside interactions are ignored,
+          // so starting a new selection just re-anchors the still-open composer
+          // with the draft intact.
+          if (!isEmpty && eventDetails.reason !== "escape-key") return;
+          onClose();
+          setIsEmpty(true);
         }}
       >
         <PopoverPrimitive.Portal>
@@ -170,11 +224,14 @@ export function SelectionComposer({
                 <>
                   {/* Page-coloured input field on the elevated surface — mirrors the
                       thread-detail reply box (grey container, black/white field). */}
-                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                  <div
+                    ref={fieldBoxRef}
+                    className="rounded-lg border border-border bg-background px-3 py-2"
+                  >
                     <CommentComposer
                       placeholder="Add a comment…"
                       submitLabel="Comment"
-                      autoFocus
+                      autoFocus={focusOnOpen}
                       compact
                       renderSendButton={false}
                       submitRef={submitRef}
@@ -205,7 +262,10 @@ export function SelectionComposer({
                       onClick={() => void submitRef.current?.()}
                       disabled={isEmpty}
                       className={cn(
-                        "inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-all",
+                        // 28px visual circle; the ::before hit extender grows
+                        // the touch target to 44px (audit M12) without changing
+                        // the footer row's layout.
+                        "relative inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-all before:absolute before:-inset-2",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                         isEmpty
                           ? "cursor-default text-muted-foreground/30 pointer-events-none"

@@ -117,7 +117,15 @@ test("gate redeem -> render preview -> code view, a11y clean on both", async ({
     await expect(page.getByRole("button", { name: "Code" })).toHaveCount(0);
   }
 
-  const codeBlock = page.locator("pre");
+  // Both panels stay mounted across toggles (the preview is hidden, not
+  // destroyed, so switching back never re-parses the markdown) — scope to the
+  // VISIBLE pre: the hidden preview keeps its own <pre> for the ```ts fence.
+  // During the ~200ms crossfade the outgoing preview intentionally keeps
+  // visibility:visible, so "pre:visible" briefly matches BOTH panels' <pre>;
+  // poll the count down to 1 (retrying) before the strict single-element
+  // assertions below, or they die on a strict-mode violation mid-fade.
+  const codeBlock = page.locator("pre:visible");
+  await expect(codeBlock).toHaveCount(1);
   await expect(codeBlock).toBeVisible();
   // Raw markdown markers should be visible verbatim in the code view.
   await expect(codeBlock).toContainText(`# ${HEADING_TEXT}`);
@@ -130,7 +138,11 @@ test("gate redeem -> render preview -> code view, a11y clean on both", async ({
   await expect
     .poll(() =>
       page.evaluate(() => {
-        let el: HTMLElement | null = document.querySelector("pre");
+        const visiblePre = Array.from(document.querySelectorAll("pre")).find(
+          (p) => getComputedStyle(p).visibility !== "hidden",
+        );
+        let el: HTMLElement | null = visiblePre ?? null;
+        if (!el) return false;
         while (el) {
           if (parseFloat(getComputedStyle(el).opacity) < 1) return false;
           el = el.parentElement;

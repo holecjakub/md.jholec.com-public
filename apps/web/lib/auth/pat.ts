@@ -2,14 +2,31 @@ import { admin } from "../db/admin";
 import { generateToken, sha256hex } from "../crypto/tokens";
 
 // TTL for export tokens (agent-read). Single source of truth shared with pat/route.ts.
-// 30d matches GitHub fine-grained PAT default expectations and is revocable at any time.
+// 30d matches GitHub fine-grained PAT default expectations. Revocation is real (R1):
+// validation honours revoked_at, and the owner can revoke every PAT bound to a
+// document via DELETE /api/d/[slug]/pat (CLI: `md revoke`).
 const EXPORT_TTL_MS = 30 * 86_400_000;
 
+// Default TTL for owner-minted CLI PATs (security review L5). Previously minted with
+// expires_at:null (immortal); now bounded to 90 days and surfaced to the caller.
+export const CLI_PAT_TTL_MS = 90 * 86_400_000;
+
 export const EXPORT_SCOPES = ["docs:read", "comments:read"] as const;
+
+/**
+ * Dedicated owner-authority scope (security review M1). Only a PAT explicitly
+ * granted this scope may exercise the credential-minting endpoints
+ * (POST /api/d/[slug]/share, POST /api/d/[slug]/pat). Content scopes
+ * (docs:*, comments:*) never imply it, and export tokens never carry it —
+ * a leaked content PAT therefore cannot mint further credentials.
+ */
+export const OWNER_SCOPE = "tokens:mint";
 
 export interface MintedExportToken {
   /** The raw (plaintext) token — shown once; never stored. */
   token: string;
+  /** ISO timestamp when the token expires (30-day TTL). */
+  expiresAt: string;
 }
 
 /**
@@ -24,16 +41,17 @@ export interface MintedExportToken {
  */
 export async function mintExportToken(documentId: string): Promise<MintedExportToken> {
   const token = `pat_${generateToken()}`;
+  const expiresAt = new Date(Date.now() + EXPORT_TTL_MS).toISOString();
   const db = admin();
   const { error: e } = await db.from("personal_access_tokens").insert({
     token_hash: sha256hex(token),
     name: "AI agent (read-only)",
     scopes: [...EXPORT_SCOPES],
     document_id: documentId,
-    expires_at: new Date(Date.now() + EXPORT_TTL_MS).toISOString(),
+    expires_at: expiresAt,
   });
   if (e) throw new Error(`Failed to mint export token: ${e.message}`);
-  return { token };
+  return { token, expiresAt };
 }
 
 export interface PatContext {

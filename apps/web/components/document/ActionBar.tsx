@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useState,
   useSyncExternalStore,
@@ -15,7 +16,9 @@ import {
   Download,
   Eye,
   HelpCircle,
+  KeyRound,
   Link2,
+  MessageSquare,
   Moon,
   Plus,
   Sparkles,
@@ -37,7 +40,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Avatar } from "@/components/comments/Avatar";
-import { createAgentLink, createShareLink, fetchDocumentMarkdown } from "@/lib/comments-api";
+import {
+  createAgentLink,
+  createShareLink,
+  fetchDocumentMarkdown,
+  revokeShareLinks,
+} from "@/lib/comments-api";
+import { useAnnounce } from "@/components/ui/live-region";
 import type { ParticipantSummary, Role } from "@/lib/document-api";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -72,19 +81,27 @@ function useMounted(): boolean {
  * pill is `hidden md:flex`; the mobile cluster is `md:hidden`.
  *
  * All chrome lives here — there is no top bar. The document's own H1 is the title.
+ *
+ * Memoized: every prop is referentially stable across comment/realtime state
+ * changes in DocumentView (view + a stable callback + payload fields), so the
+ * whole bar — tooltips, popovers, both surfaces — skips re-rendering on every
+ * comment event and only re-renders on an actual view flip.
  */
-export function ActionBar({
+export const ActionBar = memo(function ActionBar({
   view,
   onViewChange,
   role,
   slug,
   participants,
+  openThreadCount,
 }: {
   view: ViewMode;
   onViewChange: (view: ViewMode) => void;
   role: Role;
   slug: string;
   participants: ParticipantSummary[];
+  /** Count of unresolved comment threads — feeds the owner toolbar badge (m3). */
+  openThreadCount: number;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   // Help open-state is shared, but the two surfaces (desktop popover, mobile
@@ -101,6 +118,7 @@ export function ActionBar({
         role={role}
         slug={slug}
         participants={participants}
+        openThreadCount={openThreadCount}
         helpOpen={helpOpen && isDesktop}
         onHelpOpenChange={setHelpOpen}
       />
@@ -110,12 +128,13 @@ export function ActionBar({
         role={role}
         slug={slug}
         participants={participants}
+        openThreadCount={openThreadCount}
         helpOpen={helpOpen && !isDesktop}
         onHelpOpenChange={setHelpOpen}
       />
     </>
   );
-}
+});
 
 ActionBar.displayName = "ActionBar";
 
@@ -129,6 +148,7 @@ function DesktopPill({
   role,
   slug,
   participants,
+  openThreadCount,
   helpOpen,
   onHelpOpenChange,
 }: {
@@ -137,6 +157,7 @@ function DesktopPill({
   role: Role;
   slug: string;
   participants: ParticipantSummary[];
+  openThreadCount: number;
   helpOpen: boolean;
   onHelpOpenChange: (open: boolean) => void;
 }) {
@@ -150,7 +171,9 @@ function DesktopPill({
           // grey on dark — the design-system floating-surface color, so the pill
           // separates from the page background in both themes.
           "flex-col items-center gap-1 rounded-full border border-border bg-elevated p-1.5",
-          "shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]",
+          // M15: consume the theme-aware --shadow-pill token (deeper recipe + top
+          // inset highlight on dark) instead of a hardcoded pure-black shadow.
+          "shadow-pill",
         )}
       >
         {/* View toggle */}
@@ -172,10 +195,12 @@ function DesktopPill({
         {role === "owner" ? (
           <>
             <PillSeparator />
+            <DesktopThreadCount count={openThreadCount} />
             <DesktopDownloadButton slug={slug} />
             <DesktopCopyDocumentButton slug={slug} />
             <PillSeparator />
             <DesktopCopyShareButton slug={slug} />
+            <DesktopRevokeShareButton slug={slug} />
             <DesktopCopyAgentLinkButton slug={slug} />
             <DesktopParticipantsButton participants={participants} />
           </>
@@ -224,6 +249,10 @@ MobileGroupGap.displayName = "MobileGroupGap";
 const pillButtonBase = cn(
   "inline-flex size-9 items-center justify-center rounded-full text-foreground transition-colors",
   "hover:bg-secondary",
+  // M12 (WCAG 2.5.5): the visible control is 36px but a centered transparent
+  // ::before extends the hit target to 44px without changing the visuals. The
+  // pill's 4px inter-button gap means adjacent extenders just meet.
+  "relative before:absolute before:left-1/2 before:top-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 );
 
@@ -365,17 +394,20 @@ DesktopDownloadButton.displayName = "DesktopDownloadButton";
 /** Shared copy-share flow (idle → copied → idle) used by both surfaces. */
 function useCopyShare(slug: string) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+  const announce = useAnnounce();
   const copy = useCallback(async () => {
     try {
       const url = await createShareLink(slug);
       await navigator.clipboard.writeText(url);
       haptic();
       setState("copied");
+      announce("Link copied.");
     } catch {
       setState("error");
+      announce("Couldn’t copy the link.");
     }
     window.setTimeout(() => setState("idle"), 2000);
-  }, [slug]);
+  }, [slug, announce]);
   return { state, copy };
 }
 
@@ -386,17 +418,20 @@ function useCopyShare(slug: string) {
  */
 function useCopyAgentLink(slug: string) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+  const announce = useAnnounce();
   const copy = useCallback(async () => {
     try {
       const url = await createAgentLink(slug);
       await navigator.clipboard.writeText(url);
       haptic();
       setState("copied");
+      announce("Link copied.");
     } catch {
       setState("error");
+      announce("Couldn’t copy the link.");
     }
     window.setTimeout(() => setState("idle"), 2000);
-  }, [slug]);
+  }, [slug, announce]);
   return { state, copy };
 }
 
@@ -407,18 +442,48 @@ function useCopyAgentLink(slug: string) {
  */
 function useCopyDocument(slug: string) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+  const announce = useAnnounce();
   const copy = useCallback(async () => {
     try {
       const markdown = await fetchDocumentMarkdown(slug);
       await navigator.clipboard.writeText(markdown);
       haptic();
       setState("copied");
+      announce("Document copied.");
     } catch {
       setState("error");
+      announce("Couldn’t copy the document.");
     }
     window.setTimeout(() => setState("idle"), 2000);
-  }, [slug]);
+  }, [slug, announce]);
   return { state, copy };
+}
+
+/**
+ * Revoke every live reusable reviewer link (audit M5) and mint a fresh one,
+ * copying it to the clipboard. Backend-ready: DELETE /share stamps `revoked_at`
+ * on all live invite tokens, then POST /share mints a new reusable link. Owner
+ * authority only. States: idle → working → done | error → idle. Announces the
+ * outcome to the live region so it is reachable without the confirm popover.
+ */
+function useRevokeReviewerLink(slug: string) {
+  const [state, setState] = useState<"idle" | "working" | "done" | "error">("idle");
+  const announce = useAnnounce();
+  const run = useCallback(async () => {
+    setState("working");
+    try {
+      await revokeShareLinks(slug);
+      const url = await createShareLink(slug);
+      await navigator.clipboard.writeText(url);
+      haptic();
+      setState("done");
+      announce("Reviewer link revoked. A fresh link was copied to your clipboard.");
+    } catch {
+      setState("error");
+      announce("Couldn’t revoke the reviewer link. Please try again.");
+    }
+  }, [slug, announce]);
+  return { state, run };
 }
 
 function DesktopCopyDocumentButton({ slug }: { slug: string }) {
@@ -482,6 +547,137 @@ function DesktopCopyShareButton({ slug }: { slug: string }) {
 }
 
 DesktopCopyShareButton.displayName = "DesktopCopyShareButton";
+
+/**
+ * Open-thread count badge (audit m3). A non-interactive status indicator on the
+ * owner toolbar showing how many comment threads are still unresolved, fed live
+ * from comments.threads. Hidden at zero to avoid a meaningless "0" chip.
+ */
+function DesktopThreadCount({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const label = `${count} open ${count === 1 ? "thread" : "threads"}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="status"
+            aria-label={label}
+            // Non-interactive: keep the 36px span hoverable for the tooltip but
+            // stop its 44px hit-extender from swallowing clicks meant for the
+            // adjacent action buttons.
+            className={cn(pillButtonBase, "cursor-default before:pointer-events-none")}
+          >
+            <span aria-hidden className="relative inline-flex items-center justify-center">
+              <MessageSquare className="size-[18px]" />
+              <span className="absolute -right-2 -top-2 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] font-semibold leading-4 text-primary-foreground tabular-nums">
+                {count > 99 ? "99+" : count}
+              </span>
+            </span>
+          </span>
+        }
+      />
+      <TooltipContent side="left" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+DesktopThreadCount.displayName = "DesktopThreadCount";
+
+/**
+ * Confirm body shared by the desktop + mobile revoke popovers (audit M5).
+ * Confirm-before-destroy: spells out that current reviewer links stop working,
+ * then runs revoke → regenerate → copy. `onClose` collapses the popover once the
+ * fresh link has been copied.
+ */
+function RevokeReviewerLinkConfirm({
+  slug,
+  onClose,
+}: {
+  slug: string;
+  onClose: () => void;
+}) {
+  const { state, run } = useRevokeReviewerLink(slug);
+  const confirmLabel =
+    state === "working"
+      ? "Revoking…"
+      : state === "done"
+        ? "Done — link copied"
+        : state === "error"
+          ? "Failed — try again"
+          : "Revoke & regenerate";
+  return (
+    <>
+      <PopoverHeader>
+        <PopoverTitle>Revoke reviewer link?</PopoverTitle>
+      </PopoverHeader>
+      <p className="text-xs text-muted-foreground">
+        Everyone using the current reviewer link loses access immediately. A fresh
+        link is generated and copied to your clipboard.
+      </p>
+      <div className="mt-1 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex min-h-9 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void run().then(() => {
+              // Close on success; keep the popover open on error so the user can
+              // read the failure and retry.
+              window.setTimeout(onClose, 600);
+            });
+          }}
+          disabled={state === "working"}
+          className="inline-flex min-h-9 items-center justify-center rounded-md bg-destructive px-3 text-sm font-medium text-white transition-colors hover:bg-destructive/90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </>
+  );
+}
+
+RevokeReviewerLinkConfirm.displayName = "RevokeReviewerLinkConfirm";
+
+function DesktopRevokeShareButton({ slug }: { slug: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Revoke & regenerate reviewer link"
+                  className={pillButtonBase}
+                >
+                  <KeyRound aria-hidden className="size-[18px]" />
+                </button>
+              }
+            />
+          }
+        />
+        <TooltipContent side="left" sideOffset={8}>
+          Revoke &amp; regenerate reviewer link
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent side="left" align="center" sideOffset={12} className="w-72">
+        <RevokeReviewerLinkConfirm slug={slug} onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+DesktopRevokeShareButton.displayName = "DesktopRevokeShareButton";
 
 function DesktopCopyAgentLinkButton({ slug }: { slug: string }) {
   const { state, copy } = useCopyAgentLink(slug);
@@ -628,6 +824,7 @@ function MobileCluster({
   role,
   slug,
   participants,
+  openThreadCount,
   helpOpen,
   onHelpOpenChange,
 }: {
@@ -636,6 +833,7 @@ function MobileCluster({
   role: Role;
   slug: string;
   participants: ParticipantSummary[];
+  openThreadCount: number;
   helpOpen: boolean;
   onHelpOpenChange: (open: boolean) => void;
 }) {
@@ -717,18 +915,23 @@ function MobileCluster({
 
               {role === "owner" ? (
                 <>
-                  {/* Group gap: between [Theme, Help] and [Share, AI agent, Participants] */}
+                  {/* Group gap: between [Theme, Help] and the owner groups */}
                   <MobileGroupGap />
 
-                  {/* Group 2: [Copy reviewer link, Copy AI agent link, Participants] */}
+                  {/* Open-thread count status (audit m3) — sits at the top of the
+                      owner section; hidden at zero. */}
+                  <MobileThreadCount count={openThreadCount} reduceMotion={reduceMotion} />
+
+                  {/* Group 2: [Copy reviewer link, Revoke link, Copy AI agent link, Participants] */}
                   <MobileParticipantsItem
                     participants={participants}
                     reduceMotion={reduceMotion}
                   />
                   <MobileAgentLinkItem slug={slug} reduceMotion={reduceMotion} />
+                  <MobileRevokeItem slug={slug} reduceMotion={reduceMotion} />
                   <MobileShareItem slug={slug} reduceMotion={reduceMotion} />
 
-                  {/* Group gap: between [Share, AI agent, Participants] and [Download, Copy doc] */}
+                  {/* Group gap: between the link group and [Download, Copy doc] */}
                   <MobileGroupGap />
 
                   {/* Group 3: [Download, Copy document] */}
@@ -758,7 +961,7 @@ function MobileCluster({
           aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
           className={cn(
-            "inline-flex size-14 items-center justify-center rounded-full border border-border bg-elevated text-foreground shadow-lg",
+            "inline-flex size-14 items-center justify-center rounded-full border border-border bg-elevated text-foreground shadow-pill",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           )}
         >
@@ -799,7 +1002,8 @@ const mobileItemMotion = (reduceMotion: boolean | null) =>
       };
 
 const mobileItemBase = cn(
-  "inline-flex h-11 items-center gap-2 rounded-full border border-border bg-elevated pl-3 pr-4 text-sm text-foreground shadow-md",
+  // h-11 = 44px touch target (M12). shadow-pill = theme-aware elevation (M15).
+  "inline-flex h-11 items-center gap-2 rounded-full border border-border bg-elevated pl-3 pr-4 text-sm text-foreground shadow-pill",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 );
 
@@ -823,7 +1027,7 @@ function MobileViewToggle({
     <motion.div
       role="group"
       aria-label="View"
-      className="inline-flex items-center gap-1 rounded-full border border-border bg-elevated p-1 shadow-md"
+      className="inline-flex items-center gap-1 rounded-full border border-border bg-elevated p-1 shadow-pill"
       {...mobileItemMotion(reduceMotion)}
     >
       <MobileViewSegment
@@ -1073,3 +1277,68 @@ function MobileParticipantsItem({
 }
 
 MobileParticipantsItem.displayName = "MobileParticipantsItem";
+
+/**
+ * Open-thread count status in the mobile cluster (audit m3). Non-interactive
+ * (role="status"), hidden at zero. Uses the same pill language as the action
+ * items but is a div, not a button.
+ */
+function MobileThreadCount({
+  count,
+  reduceMotion,
+}: {
+  count: number;
+  reduceMotion: boolean | null;
+}) {
+  if (count <= 0) return null;
+  const label = `${count} open ${count === 1 ? "thread" : "threads"}`;
+  return (
+    <motion.div
+      role="status"
+      aria-label={label}
+      className={cn(mobileItemBase, "text-muted-foreground")}
+      {...mobileItemMotion(reduceMotion)}
+    >
+      <MessageSquare aria-hidden className="size-5" />
+      <span>{label}</span>
+    </motion.div>
+  );
+}
+
+MobileThreadCount.displayName = "MobileThreadCount";
+
+/**
+ * Revoke & regenerate reviewer link in the mobile cluster (audit M5). Opens a
+ * confirm popover (confirm-before-destroy) that runs revoke → regenerate → copy.
+ */
+function MobileRevokeItem({
+  slug,
+  reduceMotion,
+}: {
+  slug: string;
+  reduceMotion: boolean | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <motion.button
+            type="button"
+            aria-label="Revoke & regenerate reviewer link"
+            className={mobileItemBase}
+            {...mobileItemMotion(reduceMotion)}
+          >
+            <KeyRound aria-hidden className="size-5" />
+            <span>Revoke link</span>
+          </motion.button>
+        }
+      />
+      <PopoverContent side="top" align="end" sideOffset={8} className="w-72">
+        <RevokeReviewerLinkConfirm slug={slug} onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+MobileRevokeItem.displayName = "MobileRevokeItem";

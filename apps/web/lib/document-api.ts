@@ -5,6 +5,9 @@
  * whether GET /api/d/[slug] returns 200.
  */
 
+import type { CommentDTO } from "./comments-api";
+import { readErrorMessage } from "./error-message";
+
 export type Role = "owner" | "reviewer";
 
 export interface ParticipantSummary {
@@ -20,23 +23,11 @@ export interface DocPayload {
   role: Role;
   participantId: string | null;
   participants: ParticipantSummary[];
-}
-
-interface ErrorBody {
-  error: string;
-}
-
-/** Narrow an unknown JSON body to the API error shape. */
-function readErrorMessage(body: unknown, fallback: string): string {
-  if (
-    typeof body === "object" &&
-    body !== null &&
-    "error" in body &&
-    typeof (body as ErrorBody).error === "string"
-  ) {
-    return (body as ErrorBody).error;
-  }
-  return fallback;
+  /**
+   * Initial comments, embedded so the first paint needs no second sequential
+   * round trip (perf H1). Realtime refetches still use GET /comments.
+   */
+  comments: CommentDTO[];
 }
 
 export interface FetchDocResult {

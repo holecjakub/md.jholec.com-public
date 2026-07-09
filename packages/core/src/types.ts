@@ -1,5 +1,13 @@
 export type DocId = string;
 
+/**
+ * Core domain comment: camelCase fields, NO reactions, NO author enrichment.
+ *
+ * NAMING: this is intentionally distinct from the web wire type
+ * `CommentDTO`/`CommentThreadDTO` in apps/web/lib/comments-api.ts (snake_case,
+ * enriched with `reactions` + `author_name`). Don't import this where the DTO
+ * shape is expected — the field casing and the missing `reactions` differ.
+ */
 export interface Comment {
   id: string;
   documentId: DocId;
@@ -14,26 +22,12 @@ export interface ClientConfig {
   token: string;
 }
 
-export interface Anchor {
-  quote: string;
-  prefix: string;
-  suffix: string;
-  blockId: string;
-}
-
 export interface Reaction {
   id: string;
   commentId: string | null;
   emoji: string;
   participantId: string;
   createdAt: string;
-}
-
-export interface DocumentSummary {
-  slug: string;
-  title: string;
-  versionNo: number;
-  updatedAt: string;
 }
 
 export interface DocumentDetail {
@@ -65,21 +59,17 @@ export interface AgentLinkResult {
   token: string;
   /** The agent read URL: `<origin>/d/<slug>/agent/<token>`. */
   url: string;
+  /** ISO timestamp when the export token expires (30-day TTL). */
+  expiresAt: string;
+}
+
+/** Result of a revocation call (`md revoke`): how many live credentials were killed. */
+export interface RevokeResult {
+  revoked: number;
 }
 
 export interface PushVersionResult {
   versionNo: number;
-}
-
-export interface CommentThread {
-  root: Comment;
-  replies: Comment[];
-  reactions: Reaction[];
-}
-
-export interface WhoAmI {
-  ownerEmail: string | null;
-  scopes: string[];
 }
 
 // ── Agent-read export types ────────────────────────────────────────────────

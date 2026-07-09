@@ -12,5 +12,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true
+    // TODO(CQ2-TOOLING): enable "exactOptionalPropertyTypes": true. Deferred —
+    // it cascades into ~20+ type errors across apps/web (MarkdownPreview, Gate,
+    // ConfirmForm, DocumentView, ActionBar) plus core/api.ts and cli, which is
+    // beyond a low-risk hygiene sweep. Tackle as its own dedicated batch.
   }
 }

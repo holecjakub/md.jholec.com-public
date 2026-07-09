@@ -9,9 +9,13 @@ export async function setSessionCookie(claims: SessionClaims): Promise<void> {
   const jar = await cookies();
   jar.set(COOKIE, token, {
     httpOnly: true,
-    // Secure cookies are dropped by browsers over plain http (localhost dev/test),
-    // breaking the session round-trip. Enable only in production (https).
-    secure: process.env.NODE_ENV === "production",
+    // Secure cookies are dropped by browsers over plain http (WebKit is strict:
+    // it refuses Secure cookies even on http://localhost, unlike Chromium), which
+    // breaks the session round-trip. Enable in production EXCEPT when the origin is
+    // explicitly http:// (CI e2e serves a prod build over http://localhost) — a
+    // Secure cookie over http is inoperable anyway, so this never weakens real prod
+    // (APP_BASE_URL there is https://).
+    secure: process.env.NODE_ENV === "production" && !env.baseUrl.startsWith("http://"),
     sameSite: "lax",
     path: "/",
     maxAge: env.sessionTtlSeconds,

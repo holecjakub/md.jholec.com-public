@@ -628,6 +628,141 @@ test.describe("Commenting — inline highlights + per-block badges", () => {
     }
   });
 
+  test("realtime: a second reviewer sees a DELETE live via the delta path (no full-list GET)", async ({
+    browser,
+    page,
+  }) => {
+    const doc = await createDocument(page);
+
+    // Owner seeds a comment BEFORE the second context opens, so the setup does
+    // not depend on broadcast delivery — only the delete propagation does.
+    await redeemAndOpen(page, doc.ownerUrl, "Alice Author");
+    await seedComment(page, doc.slug, SENTENCE_A, "Comment to be deleted live.");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Quarterly Report", level: 1 }),
+    ).toBeVisible();
+    await expect(anyBadge(page).first()).toBeVisible({ timeout: 10_000 });
+
+    const ctxB: BrowserContext = await browser.newContext();
+    const pageB = await ctxB.newPage();
+    try {
+      await redeemAndOpen(pageB, doc.inviteUrl, "Bob Bystander");
+      await expect(anyBadge(pageB).first()).toBeVisible({ timeout: 10_000 });
+      await expect(anyHighlight(pageB).first()).toBeVisible({ timeout: 10_000 });
+
+      // Owner opens the thread and walks the trash → confirm flow.
+      await anyBadge(page).first().click();
+      const thread = threadPopover(page);
+      await expect(thread).toContainText("Comment to be deleted live.");
+      await thread.getByRole("button", { name: /Delete comment by/ }).click();
+
+      // The delete signal must merge as a DELTA on other clients: a verify-GET
+      // of the ONE comment (404 → drop), never a full-list refetch. Count list
+      // GETs from here on (the single-comment GET has a longer pathname and the
+      // SUBSCRIBED-join refetch already happened when pageB opened above).
+      const listGets: string[] = [];
+      pageB.on("request", (req) => {
+        if (req.method() !== "GET") return;
+        if (new URL(req.url()).pathname === `/api/d/${doc.slug}/comments`) {
+          listGets.push(req.url());
+        }
+      });
+
+      await thread.getByRole("button", { name: "Delete", exact: true }).click();
+
+      let realtimeOk = true;
+      try {
+        await expect(anyBadge(pageB)).toHaveCount(0, { timeout: 15_000 });
+      } catch {
+        realtimeOk = false;
+      }
+
+      if (!realtimeOk) {
+        await pageB.reload();
+        await expect(
+          pageB.getByRole("heading", { name: "Quarterly Report", level: 1 }),
+        ).toBeVisible();
+        await expect(anyBadge(pageB)).toHaveCount(0, { timeout: 10_000 });
+
+        throw new Error(
+          "REALTIME NOTED FAILURE: second context did not drop the deleted " +
+            "comment via broadcast within 15s; it only disappeared after a " +
+            "reload. The delete/verify data is correct, but the realtime " +
+            "broadcast path is not delivering live updates in this environment.",
+        );
+      }
+
+      // Underline goes with the badge, and the delta path never fell back to a
+      // full-list refetch on the second client.
+      await expect(anyHighlight(pageB)).toHaveCount(0);
+      expect(listGets, "delete must propagate as a delta, not a full-list GET").toEqual([]);
+    } finally {
+      await ctxB.close();
+    }
+  });
+
+  test("realtime: a second reviewer sees a RESOLVE live (badge + underline fade)", async ({
+    browser,
+    page,
+  }) => {
+    const doc = await createDocument(page);
+
+    await redeemAndOpen(page, doc.ownerUrl, "Olivia Owner");
+    await seedComment(page, doc.slug, SENTENCE_A, "Thread to be resolved live.");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Quarterly Report", level: 1 }),
+    ).toBeVisible();
+    await expect(anyBadge(page).first()).toBeVisible({ timeout: 10_000 });
+
+    const ctxB: BrowserContext = await browser.newContext();
+    const pageB = await ctxB.newPage();
+    try {
+      await redeemAndOpen(pageB, doc.inviteUrl, "Bob Bystander");
+      const badgeB = anyBadge(pageB).first();
+      await expect(badgeB).toBeVisible({ timeout: 10_000 });
+      await expect(badgeB).not.toHaveAttribute("data-resolved", "true");
+
+      // Owner resolves the thread.
+      await anyBadge(page).first().click();
+      const thread = threadPopover(page);
+      await thread.getByRole("button", { name: "Resolve" }).click();
+      await expect(thread).toContainText("Resolved");
+
+      // The kind:"status" signal must restyle the OTHER client live: the badge
+      // and the inline underline both pick up the resolved state (the underline
+      // check also proves the span-rebuild path re-stamps attributes).
+      let realtimeOk = true;
+      try {
+        await expect(badgeB).toHaveAttribute("data-resolved", "true", { timeout: 15_000 });
+      } catch {
+        realtimeOk = false;
+      }
+
+      if (!realtimeOk) {
+        await pageB.reload();
+        await expect(
+          pageB.getByRole("heading", { name: "Quarterly Report", level: 1 }),
+        ).toBeVisible();
+        await expect(anyBadge(pageB).first()).toHaveAttribute("data-resolved", "true", {
+          timeout: 10_000,
+        });
+
+        throw new Error(
+          "REALTIME NOTED FAILURE: second context did not restyle the resolved " +
+            "thread via broadcast within 15s; it only updated after a reload. " +
+            "The status data is correct, but the realtime broadcast path is not " +
+            "delivering live updates in this environment.",
+        );
+      }
+
+      await expect(anyHighlight(pageB).first()).toHaveAttribute("data-resolved", "true");
+    } finally {
+      await ctxB.close();
+    }
+  });
+
   test("owner: ActionBar (download/copy link) + resolve works; reviewer cannot resolve", async ({
     browser,
     page,

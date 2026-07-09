@@ -17,3 +17,7 @@ case-study/
 # Git worktrees (isolated workspaces)
 .claude/worktrees/
 inspector.json
+# Interní prezentace (web-deck) — lokální artefakty
+presentation/node_modules
+presentation/tests/shots
+presentation/tests/shots-720

@@ -18,24 +18,25 @@ const MAX_EMOJI_MOBILE = 1;
  * A compact "testimonial" badge representing all comments on one block: an
  * overlapping stack of up to 3 commenter avatars (then +N) and, when any
  * reactions exist, a summary chip of the distinct emoji used on the block with a
- * small total count. Real <button>, keyboard-operable, ≥44px target.
+ * small total count. Real <button>, keyboard-operable. The pill renders ~36px
+ * tall to stay slim in the narrow gutter, but a ::before overlay extends the
+ * touch target to ≥44px (WCAG 2.5.5 target size) without widening the visual.
  *
- * It is a QUIET, non-expanding indicator: hover/focus emphasises the block's
- * underline(s) via the shared hovered state in CommentsLayer, and a click opens
- * the block OVERVIEW popover (every thread on the paragraph) — the "everything on
- * this paragraph" affordance. Per-text disambiguation lives on the inline
- * underlines themselves (clicking a sentence's underline opens just that comment),
- * so the badge never fans out. Multi-thread blocks add a faint count pip so the
- * reader knows the overview holds more than one thread. Resolved blocks render
- * muted.
+ * It is a QUIET, non-expanding indicator: hover/focus raises the block id to
+ * CommentsLayer, which stamps data-emphasized on the block's underline(s) AND
+ * back on this button imperatively (perf H7 — hover never re-renders React), and
+ * a click opens the block OVERVIEW popover (every thread on the paragraph) — the
+ * "everything on this paragraph" affordance. Per-text disambiguation lives on the
+ * inline underlines themselves (clicking a sentence's underline opens just that
+ * comment), so the badge never fans out. Multi-thread blocks add a faint count
+ * pip so the reader knows the overview holds more than one thread. Resolved
+ * blocks render muted.
  */
 export const BlockBadge = forwardRef<
   HTMLButtonElement,
   {
     group: BlockGroup;
     selected: boolean;
-    /** Block-level emphasis (badge ↔ all-underlines hint). */
-    emphasized: boolean;
     /** Open the block overview popover (all threads on the block). */
     onOpen: () => void;
     /** Block-level hover (lights every underline on the block). */
@@ -43,7 +44,7 @@ export const BlockBadge = forwardRef<
     className?: string;
   }
 >(function BlockBadge(
-  { group, selected, emphasized, onOpen, onHoverChange, className },
+  { group, selected, onOpen, onHoverChange, className },
   ref,
 ) {
   const { participants, reactions, resolved, threads } = group;
@@ -81,17 +82,29 @@ export const BlockBadge = forwardRef<
       onBlur={() => onHoverChange(false)}
       aria-label={label}
       data-resolved={resolved || undefined}
-      data-emphasized={emphasized || undefined}
+      // CommentsLayer's imperative hover-emphasis stamps data-emphasized here
+      // (queried via this attribute) — presence-variant classes style it below.
+      // NOT data-block-id: that attribute is the anchor-relocation block
+      // selector and must stay exclusive to the rendered markdown blocks.
+      data-badge-block-id={group.blockId}
       className={cn(
         // A quiet elevated pill. The flex gap collapses to nothing when avatars
         // are the only child, so an avatar-only badge carries no dangling empty
         // space on its right edge.
-        "group inline-flex h-9 min-h-9 items-center gap-1.5 rounded-full border bg-elevated py-1 pl-1 pr-2.5 shadow-sm transition-all",
+        "group relative inline-flex h-9 min-h-9 items-center gap-1.5 rounded-full border bg-elevated py-1 pl-1 pr-2.5 shadow-sm transition-all",
+        // ≥44px touch target (WCAG 2.5.5) without inflating the 36px pill: an
+        // invisible ::before centered over the button extends the hittable box
+        // vertically to 44px. Width already exceeds 44px, so height is the gap.
+        "before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-['']",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         // Direct hover feedback (independent of the badge↔underline emphasis
         // round-trip) so the badge reacts even when it carries no reactions.
         "hover:border-accent/60 hover:shadow-md",
-        selected || emphasized ? "border-accent ring-1 ring-accent" : "border-border",
+        // Emphasis (badge ↔ underline hover coupling), stamped imperatively as
+        // data-emphasized by CommentsLayer — the attribute variant wins over the
+        // border-border fallback below.
+        "data-emphasized:border-accent data-emphasized:ring-1 data-emphasized:ring-accent",
+        selected ? "border-accent ring-1 ring-accent" : "border-border",
         resolved && "opacity-55",
         className,
       )}

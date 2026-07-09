@@ -9,6 +9,12 @@ interface GateProps {
   slug: string;
   /** True when an invite/owner token was found in the URL fragment. */
   hasFragmentToken: boolean;
+  /**
+   * True when the stashed token was an OWNER (#o=) link, false for a reviewer
+   * invite (#t=). Drives the token-rejected copy so we never imply the password
+   * fallback restores owner powers — the password only grants reviewer access.
+   */
+  tokenFromOwner: boolean;
   /** The stashed token (only meaningful when hasFragmentToken is true). */
   token: string | null;
   /** Called after a session is established so the parent can refetch the doc. */
@@ -25,6 +31,7 @@ interface GateProps {
 export function Gate({
   slug,
   hasFragmentToken,
+  tokenFromOwner,
   token,
   onAuthenticated,
   onTokenInvalidated,
@@ -77,10 +84,14 @@ export function Gate({
       }
 
       if (tokenUsable) {
-        // Token rejected — fall back to the manual password path.
+        // Token rejected — fall back to the manual password path. The password
+        // grants REVIEWER access only, so an OWNER link must not imply it
+        // restores owner powers (M7). Branch the copy on the token kind.
         if (result.status === 401) {
           setErrorMessage(
-            "This invite link is no longer valid. Enter the document password instead.",
+            tokenFromOwner
+              ? "This owner link is no longer valid. You can still enter the document password below to view it as a reviewer, but owner tools won't be available."
+              : "This invite link is no longer valid. Enter the document password instead.",
           );
         } else if (result.status === 429) {
           setErrorMessage("Too many attempts. Please wait a moment and try again.");
@@ -115,6 +126,16 @@ export function Gate({
   return (
     <main className="flex min-h-full flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm sm:p-8">
+        {/*
+          m2: this gate shows no document title, which reads phishing-adjacent
+          ("enter your password" for an unnamed doc). The title is non-secret, so
+          we'd like to show "You've been invited to review: {title}". There is no
+          cheap PUBLIC lookup today — GET /api/d/[slug] requires an established
+          session (it 401s here, which is exactly why we're at the gate). Adding a
+          slug→title endpoint that answers UNAUTHENTICATED is a deliberate
+          info-exposure decision (RLS + rate-limit) that belongs to the backend
+          owner, so it's left as a TODO rather than half-built here.
+        */}
         <div className="flex flex-col gap-2 text-center">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             Welcome

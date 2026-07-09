@@ -1,10 +1,11 @@
 "use client";
 
-import type { ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, type ComponentPropsWithoutRef } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { common } from "lowlight";
 
 import "@/app/markdown.css";
 
@@ -22,7 +23,9 @@ interface RenderProps {
 /**
  * Sanitize schema: extend the safe default (which already blocks <script>,
  * event handlers and javascript: URLs) to permit the className that
- * rehype-highlight emits on code blocks/spans (hljs token classes).
+ * rehype-highlight emits on code blocks/spans (hljs token classes) — ONLY on
+ * code/span/pre, not via the '*' wildcard, so arbitrary elements cannot carry
+ * attacker-chosen classes (CSS-based spoofing/clickjacking surface).
  * data-block-id is applied via the React components map (below) — it is a React
  * prop, never passed through the HTML sanitizer — so it needs no allow-listing.
  */
@@ -30,17 +33,59 @@ const sanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
-    "*": [...(defaultSchema.attributes?.["*"] ?? []), "className"],
     code: [...(defaultSchema.attributes?.code ?? []), "className"],
     span: [...(defaultSchema.attributes?.span ?? []), "className"],
+    pre: [...(defaultSchema.attributes?.pre ?? []), "className"],
   },
+};
+
+/**
+ * Explicit grammar subset for rehype-highlight (picked from lowlight's
+ * `common` set, which the plugin already bundles, so this adds no weight).
+ * `detect: false` disables highlight.js auto-detection, which otherwise runs
+ * every registered grammar against every untagged fence — the single most
+ * expensive step of rendering large docs. Untagged or unknown-language fences
+ * simply render unhighlighted. Grammar aliases (js/jsx, ts/tsx, sh, py, yml,
+ * md, html, patch, …) ship with each grammar, so tagged fences keep working.
+ */
+const highlightLanguages = {
+  bash: common.bash,
+  c: common.c,
+  cpp: common.cpp,
+  csharp: common.csharp,
+  css: common.css,
+  diff: common.diff,
+  go: common.go,
+  graphql: common.graphql,
+  ini: common.ini,
+  java: common.java,
+  javascript: common.javascript,
+  json: common.json,
+  kotlin: common.kotlin,
+  lua: common.lua,
+  makefile: common.makefile,
+  markdown: common.markdown,
+  objectivec: common.objectivec,
+  perl: common.perl,
+  php: common.php,
+  plaintext: common.plaintext,
+  python: common.python,
+  ruby: common.ruby,
+  rust: common.rust,
+  scss: common.scss,
+  shell: common.shell,
+  sql: common.sql,
+  swift: common.swift,
+  typescript: common.typescript,
+  xml: common.xml,
+  yaml: common.yaml,
 };
 
 // Highlight first (synchronous — react-markdown runs rehype with runSync), then
 // sanitize LAST so nothing any plugin emits can smuggle script/handlers through.
 const remarkPlugins = [remarkGfm];
 const rehypePlugins = [
-  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+  [rehypeHighlight, { detect: false, languages: highlightLanguages }],
   [rehypeSanitize, sanitizeSchema],
 ] as const;
 
@@ -67,10 +112,22 @@ function createComponents(): Components {
   };
 
   const block = <T extends keyof HTMLElementTagNameMap>(Tag: T) => {
+    // Blocks join the tab order (WCAG 2.1.1): comment creation must not require
+    // a pointer selection, so every commentable block is keyboard-focusable and
+    // CommentsLayer reveals a "Comment on this block" affordance on focus. An
+    // <hr> carries no text a quote anchor could relocate to, so it stays out of
+    // the tab order.
+    const focusable = Tag !== "hr";
     const Block = ({ node, ...props }: RenderProps & ComponentPropsWithoutRef<T>) => {
       const id = idFor(node);
       const Component = Tag as React.ElementType;
-      return <Component {...props} data-block-id={String(id)} />;
+      return (
+        <Component
+          {...props}
+          data-block-id={String(id)}
+          tabIndex={focusable ? 0 : undefined}
+        />
+      );
     };
     Block.displayName = `Block(${Tag})`;
     return Block;
@@ -93,23 +150,35 @@ function createComponents(): Components {
   };
 }
 
-export function MarkdownPreview({ content }: { content: string }) {
-  // A fresh map (and its per-render counter) each render so block ids are
-  // assigned deterministically top-to-bottom (0,1,2…) on every parse. The map
-  // is a handful of closures, so rebuilding it per render is negligible.
-  const components = createComponents();
-
-  return (
-    <div className="md-prose w-full">
+/**
+ * Memoized on `content` (a plain string), so parent state changes — comment
+ * updates, selection, realtime events — never re-run react-markdown's parse
+ * (~hundreds of ms on large docs). The `<Markdown>` element AND its components
+ * map are built together in one useMemo keyed on `content`: each parse gets a
+ * fresh components map (so its per-parse counter assigns block ids 0,1,2…
+ * top-to-bottom deterministically), and the stable element identity lets React
+ * bail out of re-rendering — and thus re-parsing — whenever this component
+ * renders again without a content change.
+ */
+export const MarkdownPreview = memo(function MarkdownPreview({
+  content,
+}: {
+  content: string;
+}) {
+  const rendered = useMemo(
+    () => (
       <Markdown
         remarkPlugins={remarkPlugins}
         // The plugin tuple array is well-typed at the element level; the cast
         // bridges react-markdown's broad PluggableList type without `any`.
         rehypePlugins={rehypePlugins as unknown as Parameters<typeof Markdown>[0]["rehypePlugins"]}
-        components={components}
+        components={createComponents()}
       >
         {content}
       </Markdown>
-    </div>
+    ),
+    [content],
   );
-}
+
+  return <div className="md-prose w-full">{rendered}</div>;
+});

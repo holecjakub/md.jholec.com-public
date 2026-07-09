@@ -3,6 +3,8 @@
  * Never import @/lib/env here — the client only sees HTTP status codes.
  */
 
+import { readErrorMessage } from "./error-message";
+
 export interface CreateResult {
   slug: string;
   shareUrl: string;
@@ -10,23 +12,6 @@ export interface CreateResult {
   /** Read-only agent GET capability URL (`/d/<slug>/agent/<token>`) — fetching it returns visible doc+comments HTML. */
   agentUrl: string;
   expiresAt: string;
-}
-
-interface ErrorBody {
-  error: string;
-}
-
-/** Narrow an unknown JSON body to the API error shape. */
-function readErrorMessage(body: unknown, fallback: string): string {
-  if (
-    typeof body === "object" &&
-    body !== null &&
-    "error" in body &&
-    typeof (body as ErrorBody).error === "string"
-  ) {
-    return (body as ErrorBody).error;
-  }
-  return fallback;
 }
 
 /** POST /api/early-access { password } — returns status + ok flag. */

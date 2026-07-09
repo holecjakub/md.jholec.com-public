@@ -118,7 +118,7 @@ export function Dropzone({
         className={cn(
           "size-8 transition-transform duration-[120ms]",
           isDrag
-            ? "scale-[1.08] text-accent motion-reduce:scale-100"
+            ? "scale-[1.08] text-accent-strong motion-reduce:scale-100"
             : isError
               ? "text-destructive"
               : "text-muted-foreground",

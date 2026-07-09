@@ -1,5 +1,5 @@
 import "server-only";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { admin } from "../db/admin";
 
 /**
@@ -29,25 +29,9 @@ export interface BroadcastSignal {
 }
 
 const CHANNEL_EVENT = "comments";
-const SUBSCRIBE_TIMEOUT_MS = 5000;
 
 function channelName(documentId: string): string {
   return `doc:${documentId}`;
-}
-
-async function subscribe(channel: RealtimeChannel): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Realtime subscribe timed out")), SUBSCRIBE_TIMEOUT_MS);
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        clearTimeout(timer);
-        resolve();
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        clearTimeout(timer);
-        reject(new Error(`Realtime channel status: ${status}`));
-      }
-    });
-  });
 }
 
 /**
@@ -55,12 +39,12 @@ async function subscribe(channel: RealtimeChannel): Promise<void> {
  * throws into the request path — failures are logged and swallowed so a
  * realtime hiccup can't fail a successful DB mutation.
  *
- * Serverless model: we deliberately do NOT cache channels across requests. On
- * Vercel a module-level Map of subscribed channels would leak across invocations
- * (and across documents) and never be torn down, exhausting the realtime
- * connection. Instead we subscribe, send, then remove the channel each time. The
- * extra subscribe round-trip costs some latency, but the signal is a tiny
- * fire-and-forget payload and clients only treat it as "refetch now".
+ * Transport: `httpSend` — a single REST POST to the realtime broadcast
+ * endpoint (HTTP 202, no websocket). The old subscribe→send→removeChannel
+ * dance paid a full websocket handshake (~150-450ms, up to 5s on timeout) per
+ * signal; REST needs no subscription at all (perf H8). We still remove the
+ * channel afterwards so the module-level admin client doesn't accumulate
+ * unjoined channel objects across invocations.
  */
 export async function broadcastDocumentChange(
   documentId: string,
@@ -71,13 +55,18 @@ export async function broadcastDocumentChange(
     config: { broadcast: { ack: false, self: false } },
   });
   try {
-    await subscribe(channel);
     const payload: BroadcastSignal = {
       kind: signal.kind,
       commentId: signal.commentId,
       at: signal.at ?? new Date().toISOString(),
     };
-    await channel.send({ type: "broadcast", event: CHANNEL_EVENT, payload });
+    const result = await channel.httpSend(CHANNEL_EVENT, payload);
+    if (!result.success) {
+      console.error(
+        "[realtime] broadcastDocumentChange failed",
+        `HTTP ${result.status}: ${result.error}`,
+      );
+    }
   } catch (err) {
     console.error("[realtime] broadcastDocumentChange failed", err);
   } finally {
@@ -87,4 +76,19 @@ export async function broadcastDocumentChange(
       // ignore cleanup failures
     }
   }
+}
+
+/**
+ * Schedules the broadcast to run AFTER the mutation response has been sent
+ * (Next `after()`), so the realtime round-trip never sits on the write's
+ * response path (perf H8). The signal timestamp is stamped now — at mutation
+ * time — not when the deferred callback eventually runs. Route handlers call
+ * this instead of awaiting `broadcastDocumentChange` directly.
+ */
+export function scheduleDocumentChangeBroadcast(
+  documentId: string,
+  signal: Omit<BroadcastSignal, "at">,
+): void {
+  const at = new Date().toISOString();
+  after(() => broadcastDocumentChange(documentId, { ...signal, at }));
 }

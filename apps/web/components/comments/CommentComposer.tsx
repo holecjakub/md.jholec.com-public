@@ -140,7 +140,9 @@ export function CommentComposer({
             onClick={() => void submit()}
             disabled={empty || submitting}
             className={cn(
-              "inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-all",
+              // 28px visual circle; the ::before hit extender grows the touch
+              // target to 44px (audit M12) without changing the row's layout.
+              "relative inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-all before:absolute before:-inset-2",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               empty
                 ? "cursor-default text-muted-foreground/40 pointer-events-none"

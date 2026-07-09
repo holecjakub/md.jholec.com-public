@@ -141,7 +141,7 @@ export function CopyableLink({
             "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "active:scale-[0.97] motion-reduce:active:scale-100",
             "[@media(hover:hover)]:hover:bg-secondary",
-            copied && "text-accent",
+            copied && "text-accent-strong",
           )}
         >
           {/* Icon swap */}

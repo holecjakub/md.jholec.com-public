@@ -1,11 +1,12 @@
 {
   "name": "@md/mcp",
   "version": "0.0.0",
+  "description": "WIP phase-2 placeholder: MCP server wrapping @md/core (not implemented yet — see spec §10). Kept as a reserved package boundary; do not delete.",
   "private": true,
   "scripts": {
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "test": "pnpm exec vitest run --passWithNoTests",
+    "typecheck": "pnpm exec tsc --noEmit",
+    "lint": "pnpm exec eslint src"
   },
-  "devDependencies": { "vitest": "^2.1.0" }
+  "devDependencies": { "vitest": "^3.2.4" }
 }

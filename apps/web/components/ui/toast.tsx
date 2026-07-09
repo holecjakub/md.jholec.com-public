@@ -28,6 +28,8 @@ interface ToastInput {
   message: string;
   tone?: "error" | "info";
   action?: ToastAction;
+  /** Auto-dismiss delay in ms; overrides the tone/action-based default. */
+  durationMs?: number;
 }
 
 interface ToastItem extends ToastInput {
@@ -59,8 +61,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = (idRef.current += 1);
       setToasts((prev) => [...prev, { ...t, id }]);
       // Errors with an action linger longer so the Retry is reachable; otherwise
-      // auto-dismiss. The user can also dismiss manually.
-      const ttl = t.action ? 8000 : 4000;
+      // auto-dismiss. Callers can override (e.g. the 5s Undo window after an
+      // emoji quick-react). The user can also dismiss manually.
+      const ttl = t.durationMs ?? (t.action ? 8000 : 4000);
       setTimeout(() => dismiss(id), ttl);
     },
     [dismiss],
@@ -98,7 +101,7 @@ function Toaster({
             transition={{ type: "spring", stiffness: 500, damping: 40 }}
             role={t.tone === "error" ? "alert" : "status"}
             className={cn(
-              "pointer-events-auto flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-sm shadow-lg",
+              "pointer-events-auto flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-sm shadow-pill",
               "border-border bg-elevated text-foreground",
               t.tone === "error" && "border-destructive/40",
             )}
